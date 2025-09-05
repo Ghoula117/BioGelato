@@ -1,5 +1,5 @@
+#include "UI/UI.h"
 #include <Arduino.h>
-#include "UI.h"
 
 const int pinCLK = 8;
 const int pinDT  = 18;
@@ -62,7 +62,7 @@ void setup() {
 
     // Menú inicial
     UI_drawMenu();                   
-    //UI_updateMenuSelection(-1, currentOption);
+    UI_updateMenuSelection(-1, currentOption);
     lastOption = currentOption;
 
 }
