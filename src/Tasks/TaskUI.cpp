@@ -1,29 +1,56 @@
 #include "tasks/TaskUI.h"
-#include "UI/UI.h"
 
-// Handle de la tarea
 static TaskHandle_t taskUIHandle = nullptr;
 
-// Implementación de la tarea
 void TaskUI(void *pvParameters) {
     int currentMenu = 0;
     int lastMenu = -1;
+    EncoderEvent evt;
 
-    UI_init();
-    UI_drawMenu();
-    UI_updateMenuSelection(lastMenu, currentMenu);
-    lastMenu = currentMenu;
+    for (;;) {
+        if (xQueueReceive(xEncoderQueue, &evt, portMAX_DELAY)) {
+            switch (evt) {
+                case ENC_LEFT:
+                    currentMenu--;
+                    break;
+
+                case ENC_RIGHT:
+                    currentMenu++;
+                    break;
+
+                case BTN_SHORT:
+                    // Aquí defines qué hace "entrar/confirmar"
+                    //enterMenu(currentMenu);
+                    break;
+
+                case BTN_LONG:
+                    // Aquí defines qué hace "retroceder menú"
+                    //goBack();
+                    break;
+            }
+
+            // Normalizar índice según el número de opciones
+            if (currentMenu < 0) currentMenu = totalOptions - 1;
+            if (currentMenu >= totalOptions) currentMenu = 0;
+
+            // Refrescar UI
+            UI_updateMenuSelection(lastMenu, currentMenu);
+            lastMenu = currentMenu;
+        }
+    }
 }
 
-// Crear la tarea
-void TaskUI_start() {
+void TaskUI_init() {
+    UI_init();
+    UI_drawMenu();
+
     xTaskCreatePinnedToCore(
-        TaskUI,           // función
-        "TaskUI",         // nombre
-        4096,             // stack
-        NULL,             // parámetros
-        1,                // prioridad
-        &taskUIHandle,    // handle
-        APP_CPU_NUM       // core (en ESP32 puedes usar 0 o 1)
+        TaskUI,       
+        "TaskUI",       
+        4096,          
+        NULL,         
+        1,              
+        &taskUIHandle,    
+        APP_CPU_NUM      
     );
 }

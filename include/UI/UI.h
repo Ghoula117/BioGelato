@@ -20,7 +20,7 @@ enum MenuOptions {
 #define TEXT_X          44
 #define TEXT_HEIGHT     16
 
-const char* menuTitles[] = {"INICIO", "REVISION", "AJUSTES"};
+extern const char* menuTitles[];
 
 // Menu settings
 const int totalOptions = 3;

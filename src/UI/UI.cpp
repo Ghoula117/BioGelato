@@ -2,7 +2,7 @@
 #include <TFT_eSPI.h>
 #include "images/icons.h"
 
-
+const char* menuTitles[] = {"INICIO", "REVISION", "AJUSTES"};
 
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite iconSprite = TFT_eSprite(&tft);
@@ -47,7 +47,6 @@ void UI_init() {
     tft.setRotation(3); 
     tft.setTextSize(2); 
     tft.fillScreen(TFT_BLACK);
-    //sprites
     iconSprite.setSwapBytes(true);
     iconSprite.createSprite(ICON_WIDTH, ICON_HEIGHT);
 }
