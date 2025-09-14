@@ -10,7 +10,6 @@ const unsigned long debounceDelayMs = 50;
 const unsigned long buttonLongPressMs = 1000;
 
 static TaskHandle_t taskEncoderHandle = nullptr;
-QueueHandle_t xEncoderQueue = nullptr;
 
 static void readEncoder()
 {
@@ -24,7 +23,7 @@ static void readEncoder()
             } else {
                 evt = ENC_LEFT;
             }
-            xQueueSend(xEncoderQueue, &evt, 0);
+            xQueueSend(xUIQueue, &evt, 0);
             lastEncoderMove = now;
         }
     }
@@ -41,7 +40,7 @@ static void readButton()
     else if (lastButtonState == LOW && currentState == HIGH) {
         unsigned long pressDuration = millis() - buttonPressTime;
         EncoderEvent evt = (pressDuration >= buttonLongPressMs) ? BTN_LONG : BTN_SHORT;
-        xQueueSend(xEncoderQueue, &evt, portMAX_DELAY);
+        xQueueSend(xUIQueue, &evt, portMAX_DELAY);
     }
 
     lastButtonState = currentState;
@@ -65,7 +64,7 @@ void TaskEncoder_init()
     pinMode(pinDT,  INPUT);
     pinMode(pinSW,  INPUT_PULLUP);
 
-    xEncoderQueue = xQueueCreate(10, sizeof(EncoderEvent));
+    xUIQueue = xQueueCreate(10, sizeof(EncoderEvent));
 
     xTaskCreatePinnedToCore(
         TaskEncoder,
