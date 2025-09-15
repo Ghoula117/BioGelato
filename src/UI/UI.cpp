@@ -45,17 +45,17 @@ void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon)
     //iconSprite.deleteSprite(); 
 }
 
-void UI_drawMenu()
+void UI_drawMenu(const char* const titles[], const uint16_t* const icons[])
 {
     const int sectionHeight = SCREEN_HEIGHT / MENU_COUNT;
     tft.fillScreen(TFT_BLACK);
     for (int i = 0; i < MENU_COUNT; i++) {
         int y = i * sectionHeight;
-        UI_drawMenuItem(menuTitles[i], menuIcons[i], y, false);
+        UI_drawMenuItem(titles[i], icons[i], y, false);
     }
 }
 
-void UI_updateMenuSelection(const char* titles[], const uint16_t* icons[],int last, int current)
+void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons,int last, int current)
 {
     const int sectionHeight = SCREEN_HEIGHT / MENU_COUNT;
     const int width = SCREEN_WIDTH - (BASE_X * 2);
@@ -75,7 +75,7 @@ void UI_updateMenuSelection(const char* titles[], const uint16_t* icons[],int la
     }
 }
 
-void UI_drawHomeScreen(int speed)
+void UI_drawMainStart(int speed)
 {
     tft.fillScreen(TFT_BLACK);
 
@@ -101,16 +101,46 @@ void UI_drawHomeScreen(int speed)
     tft.printf("%3d", speed);  // valor 0–100
 }
 
-void UI_drawReviewScreen()
+//estos renders no se usan cambiar mas adelante
+
+void UI_drawReviewMant()
 {
     tft.fillScreen(TFT_BLACK);
     tft.setCursor(10, 10);
-    tft.print("REVISION");
+    tft.print("mant");
 }
 
-void UI_drawSettingsScreen()
+void UI_drawReviewTest()
 {
     tft.fillScreen(TFT_BLACK);
     tft.setCursor(10, 10);
-    tft.print("AJUSTES");
+    tft.print("Test");
+}
+
+void UI_drawReviewSoft()
+{
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(10, 10);
+    tft.print("About us");
+}
+
+void UI_drawSettingsWifi()
+{
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(10, 10);
+    tft.print("wifi");
+}
+
+void UI_drawSettingsNotif()
+{
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(10, 10);
+    tft.print("notif");
+}
+
+void UI_drawSettingsSens()
+{
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(10, 10);
+    tft.print("sens");
 }
