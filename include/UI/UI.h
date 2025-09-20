@@ -8,11 +8,11 @@ extern TFT_eSPI tft;
 
 #define SCREEN_WIDTH   160
 #define SCREEN_HEIGHT  128
-#define MENU_COUNT      3
 #define BASE_X          2
 #define ICON_X          4
 #define TEXT_X          44
 #define TEXT_HEIGHT     16
+constexpr int MENU_COUNT = 3;
 
 void UI_init();
 void UI_drawMenu(const char* const titles[], const uint16_t* const icons[]);

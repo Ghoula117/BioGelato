@@ -1,180 +1,171 @@
+/**
+ * @file UIState.cpp
+ * @brief Implementation of the UI Finite state machine.
+ *
+ * This module implements the finite state machine for the UI menus,
+ * including menu rendering, encoder event handling, and state transitions.
+ */
 #include "UI/UIState.h"
 
+// =====================
+// MENU DEFINITIONS
+// =====================
+
+/**
+ * @brief Titles and icons for the main menu.
+ */
 const char* const mainMenuTitles[]    = {"INICIO", "REVISION", "AJUSTES"};
 const uint16_t* const mainMenuIcons[] = { home, rev, settings };
 
+/**
+ * @brief Titles and icons for the review submenu.
+ */
 const char* const reviewMenuTitles[]    = {"MANTENIMIENTO", "TEST", "SOFTWARE"};
 const uint16_t* const reviewMenuIcons[] = { home, rev, settings };
 
+/**
+ * @brief Titles and icons for the settings submenu.
+ */
 const char* const settingsMenuTitles[]    = {"WIFI", "NOTIFICACION", "SENS"};
 const uint16_t* const settingsMenuIcons[] = { home, rev, settings };
 
 // =====================
-// VARIABLES INTERNAS
+// INTERNAL VARIABLES
 // =====================
+
+/**
+ * @brief Current active state in the Finite State Machine.
+ */
 static UIState currentState = MENU_MAIN;
-static int motorSpeed = 0;
+
+/**
+ * @brief Currently selected menu entry.
+ */
 static int currentMenu = 0;
+
+/**
+ * @brief Previously selected menu entry.
+ */
 static int lastMenu = -1;
 
+/**
+ * @brief Example variable used in MENU_MAIN_START to control motor speed.
+ */
+static int motorSpeed = 0;
+
 // =====================
-// PROTOTIPOS INTERNOS
+// FUNCIONES INTERNAS
 // =====================
+
+/**
+ * @brief Enters a generic menu and draws its initial state.
+ *
+ * @param titles Menu entry titles.
+ * @param icons  Menu entry icons.
+ */
+static void UI_enterMenu(const char* const titles[], const uint16_t* const icons[])
+{
+    currentMenu = 0;
+    lastMenu = 0;
+    UI_drawMenu(titles, icons);
+    UI_updateMenuSelection(titles, icons, lastMenu, currentMenu);
+}
+
+/**
+ * @brief Generic handler for navigating and selecting menu options.
+ *
+ * @param evt Encoder events.
+ * @param titles Array of menu titles.
+ * @param icons Array of menu icons.
+ * @param optionCount Number of available options.
+ * @param transitions Optional array of transitions per option (nullptr if none).
+ */
+static void handleGenericMenu(EncoderEvent evt, const char* const titles[], const uint16_t* const icons[], int optionCount, UIState* transitions)
+{
+    switch (evt) {
+        case ENC_LEFT:  currentMenu--; break;
+        case ENC_RIGHT: currentMenu++; break;
+        case BTN_SHORT:
+            if (transitions && transitions[currentMenu] != -1) {
+                UI_setState(transitions[currentMenu]);
+            }
+            return;
+        case BTN_LONG:
+            UI_setState(MENU_INIT);
+            return;
+        default: break;
+    }
+
+    if (currentMenu < 0) currentMenu = optionCount - 1;
+    if (currentMenu >= optionCount) currentMenu = 0;
+
+    UI_updateMenuSelection(titles, icons, lastMenu, currentMenu);
+    lastMenu = currentMenu;
+}
+
+// =====================
+// FORWARD DECLARATIONS
+// =====================
+
 // main menu
-static void renderInit();
 static void handleInit(EncoderEvent evt);
-
-static void renderMainMenu();
 static void handleMainMenu(EncoderEvent evt);
-
-static void renderMainStart();
 static void handleMainStart(EncoderEvent evt);
 
 // Review Submenus
-static void renderReview();
 static void handleReview(EncoderEvent evt);
-
-static void renderReviewMant();
 static void handleReviewMant(EncoderEvent evt);
-
-static void renderReviewTest();
 static void handleReviewTest(EncoderEvent evt);
-
-static void renderReviewSoft();
 static void handleReviewSoft(EncoderEvent evt);
 
 // Settings Submenus
-static void renderSettings();
 static void handleSettings(EncoderEvent evt);
-
-static void renderSettingsWifi();
 static void handleSettingsWifi(EncoderEvent evt);
-
-static void renderSettingsNotif();
 static void handleSettingsNotif(EncoderEvent evt);
-
-static void renderSettingsSens();
 static void handleSettingsSens(EncoderEvent evt);
 
-
-
 // =====================
-// TABLA DE ESTADOS
+// STATE TABLE
 // =====================
+
+/**
+ * @brief Finite State Machine lookup table.
+ *
+ * Maps each UIState to its corresponding handler.
+ */
 static const UIStateTable stateTable[] = {
-    { renderInit,   handleInit   },                // MENU_INIT
-    { renderMainMenu, handleMainMenu },            // MENU_MAIN
-    { renderMainStart,     handleMainStart     },  // MENU_MAIN_START
+    { handleInit },      // MENU_INIT
+    { handleMainMenu },  // MENU_MAIN
+    { handleMainStart }, // MENU_MAIN_START
 
     // REVIEW
-    { renderReview,   handleReview   },     // MENU_MAIN_REVIEW
-    { renderReviewMant, handleReviewMant }, // MENU_REVIEW_MANTENIMIENTO
-    { renderReviewTest, handleReviewTest }, // MENU_REVIEW_TEST
-    { renderReviewSoft, handleReviewSoft }, // MENU_REVIEW_SOFTWARE
+    { handleReview },     // MENU_MAIN_REVIEW
+    { handleReviewMant }, // MENU_REVIEW_MANTENIMIENTO
+    { handleReviewTest }, // MENU_REVIEW_TEST
+    { handleReviewSoft }, // MENU_REVIEW_SOFTWARE
 
     // SETTINGS
-    { renderSettings, handleSettings },          // MENU_MAIN_SETTINGS
-    { renderSettingsWifi,      handleSettingsWifi     }, // MENU_SETTINGS_WIFI
-    { renderSettingsNotif,     handleSettingsNotif    }, // MENU_SETTINGS_NOTIFICACION
-    { renderSettingsSens,      handleSettingsSens     }  // MENU_SETTINGS_SENS
+    { handleSettings },      // MENU_MAIN_SETTINGS
+    { handleSettingsWifi },  // MENU_SETTINGS_WIFI
+    { handleSettingsNotif }, // MENU_SETTINGS_NOTIFICACION
+    { handleSettingsSens  }  // MENU_SETTINGS_SENS
 };
 
 // =====================
-// RENDERIZADOS
-// =====================
-
-static void renderInit()
-{
-    UI_drawMenu(mainMenuTitles, mainMenuIcons);
-}
-
-static void renderMainMenu()
-{
-    UI_drawMenu(mainMenuTitles, mainMenuIcons);
-}
-
-static void renderMainStart()
-{
-    UI_drawMainStart(motorSpeed);
-}
-
-static void renderReview()
-{
-    UI_drawMenu(reviewMenuTitles, reviewMenuIcons);
-}
-
-static void renderReviewMant()
-{
-    UI_drawReviewMant();
-}
-
-static void renderReviewTest()
-{
-    UI_drawReviewTest();
-}
-
-static void renderReviewSoft()
-{
-    UI_drawReviewSoft();
-}
-
-static void renderSettings()
-{
-    UI_drawMenu(settingsMenuTitles, settingsMenuIcons);
-}
-
-static void renderSettingsWifi()
-{
-    UI_drawReviewMant();
-}
-
-static void renderSettingsNotif()
-{
-    UI_drawReviewMant();
-}
-
-static void renderSettingsSens()
-{
-    UI_drawReviewMant();
-}
-
-
-// =====================
-// MANEJADORES DE EVENTOS
+// EVENT HANDLERS
 // =====================
 
 static void handleInit(EncoderEvent evt)
 {
-    switch (evt) {
-        case ENC_LEFT:  UI_setState(MENU_MAIN); break; 
-        case ENC_RIGHT: UI_setState(MENU_MAIN); break;
-        default:
-            break;
+    if (evt == ENC_LEFT || evt == ENC_RIGHT) {
+        UI_setState(MENU_MAIN);
     }
 }
 
 static void handleMainMenu(EncoderEvent evt)
 {
-    switch (evt) {
-        case ENC_LEFT:  currentMenu--; break;
-        case ENC_RIGHT: currentMenu++; break;
-
-        case BTN_SHORT: // confirmar selección
-            if (currentMenu == 0) UI_setState(MENU_MAIN_START);
-            if (currentMenu == 1) UI_setState(MENU_MAIN_REVIEW);
-            if (currentMenu == 2) UI_setState(MENU_MAIN_SETTINGS);
-            return;
-
-        default: break;
-    }
-
-    // Normalizar índice
-    if (currentMenu < 0) currentMenu = MENU_COUNT - 1;
-    if (currentMenu >= MENU_COUNT) currentMenu = 0;
-
-    // Dibujar
-    UI_updateMenuSelection(mainMenuTitles, mainMenuIcons, lastMenu, currentMenu);
-    lastMenu = currentMenu;
+    static UIState transitions[] = { MENU_MAIN_START, MENU_MAIN_REVIEW, MENU_MAIN_SETTINGS };
+    handleGenericMenu(evt, mainMenuTitles, mainMenuIcons, MENU_COUNT, transitions);
 }
 
 static void handleMainStart(EncoderEvent evt)
@@ -194,23 +185,8 @@ static void handleMainStart(EncoderEvent evt)
 
 static void handleReview(EncoderEvent evt)
 {
-    switch (evt) {
-        case ENC_LEFT:  currentMenu--; break;
-        case ENC_RIGHT: currentMenu++; break;
-        case BTN_SHORT:
-            if (currentMenu == 0) UI_setState(MENU_REVIEW_MANTENIMIENTO);
-            if (currentMenu == 1) UI_setState(MENU_REVIEW_TEST);
-            if (currentMenu == 2) UI_setState(MENU_REVIEW_SOFTWARE);
-            return;
-        case BTN_LONG: UI_setState(MENU_INIT); return; 
-        default: break;
-    }
-
-    if (currentMenu < 0) currentMenu = MENU_COUNT - 1;
-    if (currentMenu >= MENU_COUNT) currentMenu = 0;
-
-    UI_updateMenuSelection(reviewMenuTitles, reviewMenuIcons, lastMenu, currentMenu);
-    lastMenu = currentMenu;
+    static UIState transitions[] = { MENU_REVIEW_MAINTENANCE, MENU_REVIEW_TEST, MENU_REVIEW_SOFTWARE };
+    handleGenericMenu(evt, reviewMenuTitles, reviewMenuIcons, MENU_COUNT, transitions);
 }
 
 static void handleReviewMant(EncoderEvent evt)
@@ -239,23 +215,8 @@ static void handleReviewSoft(EncoderEvent evt)
 
 static void handleSettings(EncoderEvent evt)
 {
-    switch (evt) {
-        case ENC_LEFT:  currentMenu--; break;
-        case ENC_RIGHT: currentMenu++; break;
-        case BTN_SHORT:
-            if (currentMenu == 0) UI_setState(MENU_SETTINGS_WIFI);
-            if (currentMenu == 1) UI_setState(MENU_SETTINGS_NOTIFICACION);
-            if (currentMenu == 2) UI_setState(MENU_SETTINGS_SENS);
-            return;
-        case BTN_LONG: UI_setState(MENU_INIT); return; 
-        default: break;
-    }
-
-    if (currentMenu < 0) currentMenu = MENU_COUNT - 1;
-    if (currentMenu >= MENU_COUNT) currentMenu = 0;
-
-    UI_updateMenuSelection(settingsMenuTitles, settingsMenuIcons, lastMenu, currentMenu);
-    lastMenu = currentMenu;
+    static UIState transitions[] = { MENU_SETTINGS_WIFI, MENU_SETTINGS_SOUND, MENU_SETTINGS_SENS };
+    handleGenericMenu(evt, settingsMenuTitles, settingsMenuIcons, MENU_COUNT, transitions);
 }
 
 static void handleSettingsWifi(EncoderEvent evt)
@@ -283,8 +244,10 @@ static void handleSettingsSens(EncoderEvent evt)
 }
 
 // =====================
-// API PUBLICA
+// Finite State Machine API
 // =====================
+
+/** @copydoc UI_setState */
 void UI_setState(UIState state)
 {
     currentState = state;
@@ -294,10 +257,7 @@ void UI_setState(UIState state)
             break;
 
         case MENU_MAIN:
-            currentMenu = 0;
-            lastMenu = 0;
-            UI_drawMenu(mainMenuTitles, mainMenuIcons);
-            UI_updateMenuSelection(mainMenuTitles, mainMenuIcons, lastMenu, currentMenu);
+            UI_enterMenu(mainMenuTitles, mainMenuIcons);
             break;
 
         case MENU_MAIN_START:
@@ -305,21 +265,15 @@ void UI_setState(UIState state)
             break;
 
         case MENU_MAIN_REVIEW:
-            currentMenu = 0;
-            lastMenu = 0;
-            UI_drawMenu(reviewMenuTitles, reviewMenuIcons);
-            UI_updateMenuSelection(reviewMenuTitles, reviewMenuIcons, lastMenu, currentMenu);
+            UI_enterMenu(reviewMenuTitles, reviewMenuIcons);
             break;
 
         case MENU_MAIN_SETTINGS:
-            currentMenu = 0;
-            lastMenu = 0;
-            UI_drawMenu(settingsMenuTitles, settingsMenuIcons);
-            UI_updateMenuSelection(settingsMenuTitles, settingsMenuIcons, lastMenu, currentMenu);
+             UI_enterMenu(settingsMenuTitles, settingsMenuIcons);
             break;
 
         // === SUBMENUS DE REVIEW ===
-        case MENU_REVIEW_MANTENIMIENTO:
+        case MENU_REVIEW_MAINTENANCE:
             UI_drawReviewMant();
             break;
         case MENU_REVIEW_TEST:
@@ -333,7 +287,7 @@ void UI_setState(UIState state)
         case MENU_SETTINGS_WIFI:
             UI_drawSettingsWifi();
             break;
-        case MENU_SETTINGS_NOTIFICACION:
+        case MENU_SETTINGS_SOUND:
             UI_drawSettingsNotif();
             break;
         case MENU_SETTINGS_SENS:
@@ -342,7 +296,8 @@ void UI_setState(UIState state)
     }
 }
 
+/** @copydoc UI_processEvent */
 void UI_processEvent(EncoderEvent evt)
 {
-    stateTable[currentState].handleEvent(evt);  // Llama al handler según el estado actual
+    stateTable[currentState].handleEvent(evt);
 }
