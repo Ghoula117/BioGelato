@@ -2,6 +2,7 @@
 
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite iconSprite = TFT_eSprite(&tft);
+TFT_eSprite gifSprite  = TFT_eSprite(&tft);
 
 void UI_init()
 {
@@ -12,6 +13,8 @@ void UI_init()
     tft.fillScreen(TFT_BLACK);
     iconSprite.setSwapBytes(true);
     iconSprite.createSprite(ICON_WIDTH, ICON_HEIGHT);
+    gifSprite.setSwapBytes(true);
+    gifSprite.createSprite(GIF_WIDTH, GIF_HEIGHT);
 }
 
 static void UI_drawMenuItem(const char* title, const uint16_t* icon, int y, bool selected)
@@ -42,6 +45,17 @@ void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon)
     iconSprite.fillSprite(TFT_BLACK);
     iconSprite.pushImage(0, 0, ICON_WIDTH, ICON_HEIGHT, icon);
     iconSprite.pushSprite(x, y, TFT_BLACK);       
+    //iconSprite.deleteSprite(); 
+}
+
+void UI_drawGif(int16_t x, int16_t y, const uint16_t gif[][GIF_WIDTH * GIF_HEIGHT])
+{
+    gifSprite.fillSprite(TFT_BLACK);
+    for (int i = 0; i < GIF_FRAMES; i++) {
+        gifSprite.pushImage(0, 0, GIF_WIDTH, GIF_HEIGHT, gif[i]);
+        gifSprite.pushSprite(x, y, TFT_BLACK);       
+        vTaskDelay(100);
+    }
     //iconSprite.deleteSprite(); 
 }
 
@@ -99,15 +113,15 @@ void UI_drawMainStart(int speed)
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
     tft.setCursor((SCREEN_WIDTH / 2) - 30, 100);
     tft.printf("%3d", speed);  // valor 0–100
+    xQueueSend(xMotorQueue, &speed, 0);
 }
-
-//estos renders no se usan cambiar mas adelante
 
 void UI_drawReviewMant()
 {
-    tft.fillScreen(TFT_BLACK);
-    tft.setCursor(10, 10);
-    tft.print("mant");
+    tft.fillScreen(TFT_WHITE);
+    iconSprite.fillSprite(TFT_BLACK);
+    iconSprite.pushImage(0, 0, 64, 64, motor);
+    iconSprite.pushSprite(0, 0, TFT_BLACK);
 }
 
 void UI_drawReviewTest()

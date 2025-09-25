@@ -1,7 +1,9 @@
 #ifndef UI_H
 #define UI_H
 
+#include "Config/config.h"
 #include "images/icons.h"
+#include "images/gif.h"
 #include <TFT_eSPI.h>
 
 extern TFT_eSPI tft;
@@ -17,6 +19,7 @@ constexpr int MENU_COUNT = 3;
 void UI_init();
 void UI_drawMenu(const char* const titles[], const uint16_t* const icons[]);
 void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon);
+void UI_drawGif(int16_t x, int16_t y, const uint16_t frames[][GIF_WIDTH * GIF_HEIGHT]);
 void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons,int last, int current);
 
 void UI_drawMainStart(int speed);
