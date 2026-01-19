@@ -5,6 +5,7 @@ static unsigned long lastEncoderMove = 0;
 
 static bool lastButtonState = HIGH;
 static unsigned long buttonPressTime = 0;
+static bool longPressFired = false;
 
 const unsigned long debounceDelayMs = 50;
 const unsigned long buttonLongPressMs = 1000;
@@ -33,14 +34,31 @@ static void readEncoder()
 static void readButton()
 {
     bool currentState = digitalRead(pinSW);
+    unsigned long now = millis();
 
+    // Button pressed (falling edge)
     if (lastButtonState == HIGH && currentState == LOW) {
-        buttonPressTime = millis();
-    } 
-    else if (lastButtonState == LOW && currentState == HIGH) {
-        unsigned long pressDuration = millis() - buttonPressTime;
-        EncoderEvent evt = (pressDuration >= buttonLongPressMs) ? BTN_LONG : BTN_SHORT;
-        xQueueSend(xUIQueue, &evt, portMAX_DELAY);
+        buttonPressTime = now;
+        longPressFired = false;
+    }
+
+    // Button held down -> check long press timeout
+    if (currentState == LOW && !longPressFired) {
+        if (now - buttonPressTime >= buttonLongPressMs) {
+            EncoderEvent evt = BTN_LONG;
+            xQueueSend(xUIQueue, &evt, 0);
+            longPressFired = true;
+        }
+    }
+
+    // Button released (rising edge)
+    if (lastButtonState == LOW && currentState == HIGH) {
+
+        // Only send short press if long press never fired
+        if (!longPressFired) {
+            EncoderEvent evt = BTN_SHORT;
+            xQueueSend(xUIQueue, &evt, 0);
+        }
     }
 
     lastButtonState = currentState;

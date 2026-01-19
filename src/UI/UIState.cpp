@@ -26,7 +26,7 @@ const uint16_t* const reviewMenuIcons[] = { home, rev, settings };
 /**
  * @brief Titles and icons for the settings submenu.
  */
-const char* const settingsMenuTitles[]    = {"WIFI", "NOTIFICACION", "SENS"};
+const char* const settingsMenuTitles[]    = {"WIFI", "MOTOR", "APAGAR"};
 const uint16_t* const settingsMenuIcons[] = { home, rev, settings };
 
 // =====================
@@ -121,8 +121,8 @@ static void handleReviewSoft(EncoderEvent evt);
 // Settings Submenus
 static void handleSettings(EncoderEvent evt);
 static void handleSettingsWifi(EncoderEvent evt);
-static void handleSettingsNotif(EncoderEvent evt);
-static void handleSettingsSens(EncoderEvent evt);
+static void handleSettingsMotor(EncoderEvent evt);
+static void handleSettingsPowerOff(EncoderEvent evt);
 
 // =====================
 // STATE TABLE
@@ -147,8 +147,8 @@ static const UIStateTable stateTable[] = {
     // SETTINGS
     { handleSettings },      // MENU_MAIN_SETTINGS
     { handleSettingsWifi },  // MENU_SETTINGS_WIFI
-    { handleSettingsNotif }, // MENU_SETTINGS_NOTIFICACION
-    { handleSettingsSens  }  // MENU_SETTINGS_SENS
+    { handleSettingsMotor }, // MENU_SETTINGS_NOTIFICACION
+    { handleSettingsPowerOff  }  // MENU_SETTINGS_SENS
 };
 
 // =====================
@@ -173,6 +173,7 @@ static void handleMainStart(EncoderEvent evt)
     switch (evt) {
         case ENC_LEFT:  motorSpeed--; break;
         case ENC_RIGHT: motorSpeed++; break;
+        case BTN_SHORT: motorSpeed = 0; break;
         case BTN_LONG:  UI_setState(MENU_INIT); return;
         default: break;
     }
@@ -215,7 +216,7 @@ static void handleReviewSoft(EncoderEvent evt)
 
 static void handleSettings(EncoderEvent evt)
 {
-    static UIState transitions[] = { MENU_SETTINGS_WIFI, MENU_SETTINGS_SOUND, MENU_SETTINGS_SENS };
+    static UIState transitions[] = { MENU_SETTINGS_WIFI, MENU_SETTINGS_MOTOR, MENU_SETTINGS_POWER_OFF };
     handleGenericMenu(evt, settingsMenuTitles, settingsMenuIcons, MENU_COUNT, transitions);
 }
 
@@ -227,7 +228,7 @@ static void handleSettingsWifi(EncoderEvent evt)
     }
 }
 
-static void handleSettingsNotif(EncoderEvent evt)
+static void handleSettingsMotor(EncoderEvent evt)
 {
     switch (evt) {
         case BTN_LONG:  UI_setState(MENU_MAIN_SETTINGS); return;
@@ -235,9 +236,12 @@ static void handleSettingsNotif(EncoderEvent evt)
     }
 }
 
-static void handleSettingsSens(EncoderEvent evt)
+static void handleSettingsPowerOff(EncoderEvent evt)
 {
     switch (evt) {
+        case BTN_SHORT:
+            // Lógica para apagar el dispositivo
+            break;
         case BTN_LONG:  UI_setState(MENU_MAIN_SETTINGS); return;
         default: break;
     }
@@ -287,11 +291,11 @@ void UI_setState(UIState state)
         case MENU_SETTINGS_WIFI:
             UI_drawSettingsWifi();
             break;
-        case MENU_SETTINGS_SOUND:
-            UI_drawSettingsNotif();
+        case MENU_SETTINGS_MOTOR:
+            UI_drawSettingsMotor();
             break;
-        case MENU_SETTINGS_SENS:
-            UI_drawSettingsSens();
+        case MENU_SETTINGS_POWER_OFF:
+            UI_drawSettingsPowerOff();
             break;
     }
 }

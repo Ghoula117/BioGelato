@@ -8,7 +8,7 @@
 
 const int pinCLK = 8;
 const int pinDT  = 18;
-const int pinSW  = 19;
+const int pinSW  = 12;
 
 enum EncoderEvent {
     ENC_LEFT   = 0,

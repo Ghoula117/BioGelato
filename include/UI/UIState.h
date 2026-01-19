@@ -47,8 +47,8 @@ enum UIState {
 
     MENU_MAIN_SETTINGS,      /**< Settings submenu */
     MENU_SETTINGS_WIFI,      /**< "WiFi" option */
-    MENU_SETTINGS_SOUND,     /**< "Sound" option */
-    MENU_SETTINGS_SENS       /**< "Sensors" option */
+    MENU_SETTINGS_MOTOR,     /**< "Motor" option */
+    MENU_SETTINGS_POWER_OFF  /**< "Power Off" option */
 };
 
 /**

@@ -28,7 +28,7 @@ void UI_drawReviewTest();
 void UI_drawReviewSoft();
 
 void UI_drawSettingsWifi();
-void UI_drawSettingsNotif();
-void UI_drawSettingsSens();
+void UI_drawSettingsMotor();
+void UI_drawSettingsPowerOff();
 
 #endif

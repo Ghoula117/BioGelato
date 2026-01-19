@@ -145,16 +145,16 @@ void UI_drawSettingsWifi()
     tft.print("wifi");
 }
 
-void UI_drawSettingsNotif()
-{
-    tft.fillScreen(TFT_BLACK);
-    tft.setCursor(10, 10);
-    tft.print("notif");
-}
-
-void UI_drawSettingsSens()
+void UI_drawSettingsMotor()
 {
     tft.fillScreen(TFT_BLACK);
     tft.setCursor(10, 10);
     tft.print("sens");
+}
+
+void UI_drawSettingsPowerOff()
+{
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(10, 10);
+    tft.print("Power OFF");
 }
