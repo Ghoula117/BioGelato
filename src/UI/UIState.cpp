@@ -1,9 +1,6 @@
 /**
  * @file UIState.cpp
- * @brief Implementation of the UI Finite state machine.
- *
- * This module implements the finite state machine for the UI menus,
- * including menu rendering, encoder event handling, and state transitions.
+ * @brief Implementation of the UI Finite State Machine.
  */
 #include "UI/UIState.h"
 
@@ -11,89 +8,72 @@
 // MENU DEFINITIONS
 // =====================
 
-/**
- * @brief Titles and icons for the main menu.
- */
-const char* const mainMenuTitles[]    = {"INICIO", "REVISION", "AJUSTES"};
-const uint16_t* const mainMenuIcons[] = { home, rev, settings };
+const char* const mainMenuTitles[]    = {"INICIO", "SISTEMA", "AJUSTES"};
+const uint16_t* const mainMenuIcons[] = { homeIcon, systemIcon, settingsIcon };
 
-/**
- * @brief Titles and icons for the review submenu.
- */
-const char* const reviewMenuTitles[]    = {"MANTENIMIENTO", "TEST", "SOFTWARE"};
-const uint16_t* const reviewMenuIcons[] = { home, rev, settings };
+const char* const systemMenuTitles[]    = {"LIMPIEZA", "INFO", "GUARDAR"};
+const uint16_t* const systemMenuIcons[] = { homeIcon, aboutIcon, SaveIcon };
 
-/**
- * @brief Titles and icons for the settings submenu.
- */
-const char* const settingsMenuTitles[]    = {"WIFI", "MOTOR", "APAGAR"};
-const uint16_t* const settingsMenuIcons[] = { home, rev, settings };
+const char* const settingsMenuTitles[]    = {"ALGO", "MOTOR", "APAGAR"};
+const uint16_t* const settingsMenuIcons[] = { MotorTuningIcon, MotorTuningIcon, PowerOffIcon };
 
 // =====================
 // INTERNAL VARIABLES
 // =====================
+static int confirmIndex = 0;
 
-/**
- * @brief Current active state in the Finite State Machine.
- */
-static UIState currentState = MENU_MAIN;
+static const uint32_t timeOptions[] = {
+    15 * 60 * 1000,
+    30 * 60 * 1000,
+    45 * 60 * 1000,
+    60 * 60 * 1000,
+    0
+};
 
-/**
- * @brief Currently selected menu entry.
- */
-static int currentMenu = 0;
-
-/**
- * @brief Previously selected menu entry.
- */
-static int lastMenu = -1;
-
-/**
- * @brief Example variable used in MENU_MAIN_START to control motor speed.
- */
+static int timeIndex = TIME_DEFAULT_INDEX;
 static int motorSpeed = 0;
 
-// =====================
-// FUNCIONES INTERNAS
-// =====================
+static UIState currentState = UI_STATE_INVALID;
 
-/**
- * @brief Enters a generic menu and draws its initial state.
- *
- * @param titles Menu entry titles.
- * @param icons  Menu entry icons.
- */
+static int currentMenu = 0;
+static int lastMenu    = -1;
+
+// =====================
+// INTERNAL HELPERS
+// =====================
 static void UI_enterMenu(const char* const titles[], const uint16_t* const icons[])
 {
     currentMenu = 0;
-    lastMenu = 0;
+    lastMenu    = 0;
+
     UI_drawMenu(titles, icons);
     UI_updateMenuSelection(titles, icons, lastMenu, currentMenu);
 }
 
-/**
- * @brief Generic handler for navigating and selecting menu options.
- *
- * @param evt Encoder events.
- * @param titles Array of menu titles.
- * @param icons Array of menu icons.
- * @param optionCount Number of available options.
- * @param transitions Optional array of transitions per option (nullptr if none).
- */
-static void handleGenericMenu(EncoderEvent evt, const char* const titles[], const uint16_t* const icons[], int optionCount, UIState* transitions)
+static void handleGenericMenu(EncoderEvent evt,
+                              const char* const titles[],
+                              const uint16_t* const icons[],
+                              int optionCount,
+                              const UIState* transitions)
 {
     switch (evt) {
-        case ENC_LEFT:  currentMenu--; break;
-        case ENC_RIGHT: currentMenu++; break;
+
+        case ENC_LEFT:
+            currentMenu--;
+            break;
+        case ENC_RIGHT:
+            currentMenu++;
+            break;
         case BTN_SHORT:
-            if (transitions && transitions[currentMenu] != -1) {
+            if (transitions && transitions[currentMenu] != UI_STATE_INVALID) {
                 UI_setState(transitions[currentMenu]);
             }
             return;
         case BTN_LONG:
-            UI_setState(MENU_INIT);
+            UI_setState(MENU_MAIN);
             return;
-        default: break;
+        default:
+            return;
     }
 
     if (currentMenu < 0) currentMenu = optionCount - 1;
@@ -103,205 +83,329 @@ static void handleGenericMenu(EncoderEvent evt, const char* const titles[], cons
     lastMenu = currentMenu;
 }
 
+static void handleConfirmDialog(EncoderEvent evt, void (*onAccept)(void), UIState cancelState)
+{
+    switch (evt)
+    {
+        case ENC_LEFT:
+        case ENC_RIGHT:
+            confirmIndex ^= 1; // toggle 0<->1
+            UI_drawConfirmButtons(confirmIndex);
+            break;
+        case BTN_SHORT:
+            if (confirmIndex == 0)
+            {
+                onAccept();
+            }
+            UI_setState(cancelState);
+            break;
+        case BTN_LONG:
+            UI_setState(cancelState);
+            break;
+        default:
+            break;
+    }
+}
+
+static void sendPowerRequeste()
+{
+    PowerCommand cmd;
+    cmd.type = POWER_CMD_SHUTDOWN;
+    configASSERT(xQueueSend(xPowerQueue, &cmd, 0) == pdPASS);
+}
+
+static void sendSettingsSave()
+{
+    SettingsCommand cmd;
+    cmd.type = SETTINGS_CMD_SAVE;
+    cmd.data.motorSpeed = motorSpeed;
+    cmd.data.timeIndex  = timeIndex;
+    configASSERT(xQueueSend(xSettingsQueue, &cmd, 0) == pdPASS);
+}
+
+void UI_applySettings(const SettingsPayload& data)
+{
+    motorSpeed = data.motorSpeed;
+    timeIndex  = data.timeIndex;
+}
+
+static inline void sendBuzzerCommand(BuzzerCmdType type)
+{
+    BuzzerCommand cmd;
+    cmd.type = type;
+    configASSERT(xQueueSend(xBuzzerQueue, &cmd, 0) == pdPASS);
+}
+
+
 // =====================
-// FORWARD DECLARATIONS
+// ENTRY HOOKS
 // =====================
+static void enterInit()
+{
+    UI_drawBootLogo();
+}
 
-// main menu
-static void handleInit(EncoderEvent evt);
-static void handleMainMenu(EncoderEvent evt);
-static void handleMainStart(EncoderEvent evt);
+static void enterMainMenu()
+{
+    UI_enterMenu(mainMenuTitles, mainMenuIcons);
+}
 
-// Review Submenus
-static void handleReview(EncoderEvent evt);
-static void handleReviewMant(EncoderEvent evt);
-static void handleReviewTest(EncoderEvent evt);
-static void handleReviewSoft(EncoderEvent evt);
+static void enterSystemMenu()
+{
+    UI_enterMenu(systemMenuTitles, systemMenuIcons);
+}
 
-// Settings Submenus
-static void handleSettings(EncoderEvent evt);
-static void handleSettingsWifi(EncoderEvent evt);
-static void handleSettingsMotor(EncoderEvent evt);
-static void handleSettingsPowerOff(EncoderEvent evt);
+static void enterSettingsMenu()
+{
+    UI_enterMenu(settingsMenuTitles, settingsMenuIcons);
+}
 
-// =====================
-// STATE TABLE
-// =====================
+static void enterTimeSelect()
+{
+    UI_drawTimeSelectStatic();
+    UI_updateTimeSelect(timeIndex);
+}
 
-/**
- * @brief Finite State Machine lookup table.
- *
- * Maps each UIState to its corresponding handler.
- */
-static const UIStateTable stateTable[] = {
-    { handleInit },      // MENU_INIT
-    { handleMainMenu },  // MENU_MAIN
-    { handleMainStart }, // MENU_MAIN_START
+static void enterSpeedControl()
+{
+    UI_drawSpeedStatic();
+    UI_updateSpeed(motorSpeed);
+}
 
-    // REVIEW
-    { handleReview },     // MENU_MAIN_REVIEW
-    { handleReviewMant }, // MENU_REVIEW_MANTENIMIENTO
-    { handleReviewTest }, // MENU_REVIEW_TEST
-    { handleReviewSoft }, // MENU_REVIEW_SOFTWARE
+static void enterReviewSaveConfirm()
+{
+    confirmIndex = 0;
+    UI_drawConfirmStatic("¿GUARDAR?", SaveIcon);
+}
 
-    // SETTINGS
-    { handleSettings },      // MENU_MAIN_SETTINGS
-    { handleSettingsWifi },  // MENU_SETTINGS_WIFI
-    { handleSettingsMotor }, // MENU_SETTINGS_NOTIFICACION
-    { handleSettingsPowerOff  }  // MENU_SETTINGS_SENS
-};
+static void enterPowerOff()
+{
+    confirmIndex = 0;
+    UI_drawConfirmStatic("¿APAGAR?", PowerOffIcon);
+}
 
 // =====================
 // EVENT HANDLERS
 // =====================
-
 static void handleInit(EncoderEvent evt)
 {
-    if (evt == ENC_LEFT || evt == ENC_RIGHT) {
+    if (evt == ENC_LEFT || evt == ENC_RIGHT || evt == BTN_SHORT)
+    {
         UI_setState(MENU_MAIN);
     }
 }
 
 static void handleMainMenu(EncoderEvent evt)
 {
-    static UIState transitions[] = { MENU_MAIN_START, MENU_MAIN_REVIEW, MENU_MAIN_SETTINGS };
-    handleGenericMenu(evt, mainMenuTitles, mainMenuIcons, MENU_COUNT, transitions);
+    static const UIState transitions[] = {
+        MENU_MAIN_TIME_SELECT,
+        MENU_MAIN_REVIEW,
+        MENU_MAIN_SETTINGS
+    };
+
+    handleGenericMenu(evt,
+                      mainMenuTitles,
+                      mainMenuIcons,
+                      MENU_COUNT,
+                      transitions);
 }
 
-static void handleMainStart(EncoderEvent evt)
+static void handleTimeSelect(EncoderEvent evt)
 {
-    switch (evt) {
-        case ENC_LEFT:  motorSpeed--; break;
-        case ENC_RIGHT: motorSpeed++; break;
-        case BTN_SHORT: motorSpeed = 0; break;
-        case BTN_LONG:  UI_setState(MENU_INIT); return;
-        default: break;
+    switch(evt)
+    {
+        case ENC_LEFT:
+            timeIndex--;
+            break;
+        case ENC_RIGHT:
+            timeIndex++;
+            break;
+        case BTN_SHORT:
+            sendBuzzerCommand(BUZZER_CMD_CONFIRM);
+            UI_setState(MENU_MAIN_SPEED_CONTROL);
+            return;
+        case BTN_LONG:
+            UI_setState(MENU_MAIN);
+            return;
+        default: return;
     }
 
-    if (motorSpeed < 0) motorSpeed = 0;
-    if (motorSpeed > 100) motorSpeed = 100;
+    if(timeIndex < 0) timeIndex = TIME_OPTION_COUNT - 1;
+    if(timeIndex >= TIME_OPTION_COUNT) timeIndex = 0;
 
-    UI_drawMainStart(motorSpeed);
+    UI_updateTimeSelect(timeIndex);
+}
+
+static void handleSpeedControl(EncoderEvent evt)
+{
+    switch(evt)
+    {
+        case ENC_LEFT:
+            motorSpeed--;
+            break;
+        case ENC_RIGHT:
+            motorSpeed++;
+            break;
+        case BTN_SHORT:
+        {
+            MotorCommand cmd;
+            cmd.type  = MOTOR_CMD_SET_SPEED;
+            cmd.speed = motorSpeed;
+            xQueueSend(xMotorQueue, &cmd, 0);
+            sendBuzzerCommand(BUZZER_CMD_CONFIRM);
+            return;
+        }
+
+        case BTN_LONG:
+            UI_setState(MENU_MAIN_TIME_SELECT);
+            return;
+        default: return;
+    }
+
+    if(motorSpeed < 0)
+    {
+        motorSpeed = 0;
+        sendBuzzerCommand(BUZZER_CMD_CLICK);
+    } 
+    if(motorSpeed > 100)
+    {
+        motorSpeed = 100;
+        sendBuzzerCommand(BUZZER_CMD_CLICK);
+    }
+
+    UI_updateSpeed(motorSpeed);
 }
 
 static void handleReview(EncoderEvent evt)
 {
-    static UIState transitions[] = { MENU_REVIEW_MAINTENANCE, MENU_REVIEW_TEST, MENU_REVIEW_SOFTWARE };
-    handleGenericMenu(evt, reviewMenuTitles, reviewMenuIcons, MENU_COUNT, transitions);
+    static const UIState transitions[] = {
+        MENU_REVIEW_SYSTEM,
+        MENU_REVIEW_SAVE_CONFIRM,
+        MENU_REVIEW_SOFTWARE
+    };
+
+    handleGenericMenu(evt,
+                      systemMenuTitles,
+                      systemMenuIcons,
+                      MENU_COUNT,
+                      transitions);
 }
 
-static void handleReviewMant(EncoderEvent evt)
+static void handleReviewSystem(EncoderEvent evt)
 {
-    switch (evt) {
-        case BTN_LONG:  UI_setState(MENU_MAIN_REVIEW); return;
-        default: break;
-    }
+    if (evt == BTN_LONG)
+        UI_setState(MENU_MAIN_REVIEW);
 }
 
-static void handleReviewTest(EncoderEvent evt)
+static void handleReviewSaveConfirm(EncoderEvent evt)
 {
-    switch (evt) {
-        case BTN_LONG:  UI_setState(MENU_MAIN_REVIEW); return;
-        default: break;
-    }
+    handleConfirmDialog(evt, sendSettingsSave, MENU_MAIN_REVIEW);
 }
 
 static void handleReviewSoft(EncoderEvent evt)
 {
-    switch (evt) {
-        case BTN_LONG:  UI_setState(MENU_MAIN_REVIEW); return;
-        default: break;
-    }
+    if (evt == BTN_LONG)
+        UI_setState(MENU_MAIN_REVIEW);
 }
 
 static void handleSettings(EncoderEvent evt)
 {
-    static UIState transitions[] = { MENU_SETTINGS_WIFI, MENU_SETTINGS_MOTOR, MENU_SETTINGS_POWER_OFF };
-    handleGenericMenu(evt, settingsMenuTitles, settingsMenuIcons, MENU_COUNT, transitions);
+    static const UIState transitions[] = {
+        MENU_SETTINGS_WIFI,
+        MENU_SETTINGS_MOTOR,
+        MENU_SETTINGS_POWER_OFF
+    };
+
+    handleGenericMenu(evt,
+                      settingsMenuTitles,
+                      settingsMenuIcons,
+                      MENU_COUNT,
+                      transitions);
 }
 
 static void handleSettingsWifi(EncoderEvent evt)
 {
-    switch (evt) {
-        case BTN_LONG:  UI_setState(MENU_MAIN_SETTINGS); return;
-        default: break;
-    }
+    if (evt == BTN_LONG)
+        UI_setState(MENU_MAIN_SETTINGS);
 }
 
 static void handleSettingsMotor(EncoderEvent evt)
 {
-    switch (evt) {
-        case BTN_LONG:  UI_setState(MENU_MAIN_SETTINGS); return;
-        default: break;
-    }
+    if (evt == BTN_LONG)
+        UI_setState(MENU_MAIN_SETTINGS);
 }
 
 static void handleSettingsPowerOff(EncoderEvent evt)
 {
-    switch (evt) {
-        case BTN_SHORT:
-            // Lógica para apagar el dispositivo
-            break;
-        case BTN_LONG:  UI_setState(MENU_MAIN_SETTINGS); return;
-        default: break;
-    }
+    handleConfirmDialog(evt, sendPowerRequeste, MENU_MAIN_SETTINGS);
 }
 
 // =====================
-// Finite State Machine API
+// STATE TABLE
 // =====================
+static const UIStateTable stateTable[] = {
 
-/** @copydoc UI_setState */
-void UI_setState(UIState state)
+    // MENU_INIT
+    { enterInit,         handleInit,         nullptr },
+
+    // MENU_MAIN
+    { enterMainMenu,     handleMainMenu,     nullptr },
+
+    // MENU_MAIN_TIME_SELECT
+    { enterTimeSelect,   handleTimeSelect,   nullptr },
+
+    // MENU_MAIN_SPEED_CONTROL
+    { enterSpeedControl, handleSpeedControl, nullptr },
+
+    // MENU_MAIN_REVIEW
+    { enterSystemMenu,   handleReview,       nullptr },
+
+    // MENU_REVIEW_SYSTEM
+    { UI_drawReviewSystem, handleReviewSystem,   nullptr },
+
+    // MENU_REVIEW_SOFTWARE
+    { UI_drawReviewSoft, handleReviewSoft,   nullptr },
+
+    // MENU_REVIEW_SAVE_CONFIRM
+    { enterReviewSaveConfirm , handleReviewSaveConfirm,   nullptr },
+
+    // MENU_MAIN_SETTINGS
+    { enterSettingsMenu, handleSettings,     nullptr },
+
+    // MENU_SETTINGS_WIFI
+    { UI_drawSettingsWifi,  handleSettingsWifi,  nullptr },
+
+    // MENU_SETTINGS_MOTOR
+    { UI_drawSettingsMotor, handleSettingsMotor, nullptr },
+
+    // MENU_SETTINGS_POWER_OFF
+    { enterPowerOff,        handleSettingsPowerOff, nullptr }
+};
+
+// =====================
+// FSM API
+// =====================
+void UI_setState(UIState newState)
 {
-    currentState = state;
-    switch (state) {
-        case MENU_INIT:
-            UI_drawMenu(mainMenuTitles, mainMenuIcons);
-            break;
+    if (newState >= UI_STATE_COUNT) return;
+    if (newState == currentState)   return;
 
-        case MENU_MAIN:
-            UI_enterMenu(mainMenuTitles, mainMenuIcons);
-            break;
-
-        case MENU_MAIN_START:
-            UI_drawMainStart(0);
-            break;
-
-        case MENU_MAIN_REVIEW:
-            UI_enterMenu(reviewMenuTitles, reviewMenuIcons);
-            break;
-
-        case MENU_MAIN_SETTINGS:
-             UI_enterMenu(settingsMenuTitles, settingsMenuIcons);
-            break;
-
-        // === SUBMENUS DE REVIEW ===
-        case MENU_REVIEW_MAINTENANCE:
-            UI_drawReviewMant();
-            break;
-        case MENU_REVIEW_TEST:
-            UI_drawReviewTest();
-            break;
-        case MENU_REVIEW_SOFTWARE:
-            UI_drawReviewSoft();
-            break;
-
-        // === SUBMENUS DE SETTINGS ===
-        case MENU_SETTINGS_WIFI:
-            UI_drawSettingsWifi();
-            break;
-        case MENU_SETTINGS_MOTOR:
-            UI_drawSettingsMotor();
-            break;
-        case MENU_SETTINGS_POWER_OFF:
-            UI_drawSettingsPowerOff();
-            break;
+    if (currentState != UI_STATE_INVALID)
+    {
+        if (stateTable[currentState].onExit)
+            stateTable[currentState].onExit();
     }
+
+    currentState = newState;
+
+    if (stateTable[currentState].onEnter)
+        stateTable[currentState].onEnter();
 }
 
-/** @copydoc UI_processEvent */
 void UI_processEvent(EncoderEvent evt)
 {
-    stateTable[currentState].handleEvent(evt);
+    if (stateTable[currentState].handleEvent)
+        stateTable[currentState].handleEvent(evt);
 }
+
+static_assert(UI_STATE_COUNT == (sizeof(stateTable) / sizeof(stateTable[0])));

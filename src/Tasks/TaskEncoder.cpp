@@ -1,88 +1,141 @@
+/**
+ * @file TaskEncoder.cpp
+ * @brief Rotary encoder and push-button task manager.
+ *
+ * This module reads a rotary encoder and its push-button,
+ * performs software debouncing, long-press detection and sends
+ * UI events to the UI queue.
+ */
 #include "Tasks/TaskEncoder.h"
 
+/**
+ * @brief Last sampled CLK state (for detection).
+ */
 static int lastCLK = LOW;
-static unsigned long lastEncoderMove = 0;
 
+/**
+ * @brief Timestamp of last valid encoder movement (ms).
+ */
+static unsigned long lastEncoderMoveMs;
+
+/** 
+ * @brief Last sampled button state.
+ */
 static bool lastButtonState = HIGH;
+
+/**
+ * @brief Timestamp when button was pressed (ms).
+ */
 static unsigned long buttonPressTime = 0;
+
+/**
+ * @brief Flag indicating that long press event has been fired.
+ */
 static bool longPressFired = false;
 
-const unsigned long debounceDelayMs = 50;
-const unsigned long buttonLongPressMs = 1000;
+/**
+ * @brief Encoder debounce time in milliseconds.
+ */
+static constexpr uint32_t DEBOUNCE_MS   = 50;
 
-static TaskHandle_t taskEncoderHandle = nullptr;
+/**
+ * @brief Button long-press threshold in milliseconds.
+ */
+static constexpr uint32_t LONG_PRESS_MS = 1000;
 
+/**
+ * @brief Reads rotary encoder and sends rotation events.
+ *
+ * Applies debounce timing and posts ENC_LEFT or
+ * ENC_RIGHT events to the UI queue.
+ */
 static void readEncoder()
 {
     int clkState = digitalRead(pinCLK);
-    if (clkState != lastCLK) {
-        unsigned long now = millis();
-        if (now - lastEncoderMove > debounceDelayMs) {
-            EncoderEvent evt;
-            if (digitalRead(pinDT) != clkState) {
-                evt = ENC_RIGHT;
-            } else {
-                evt = ENC_LEFT;
-            }
+    if (clkState != lastCLK)
+    {
+        uint32_t now = millis();
+        if (now - lastEncoderMoveMs > DEBOUNCE_MS)
+        {
+            EncoderEvent evt = (digitalRead(pinDT) != clkState) ? ENC_RIGHT : ENC_LEFT;
             xQueueSend(xUIQueue, &evt, 0);
-            lastEncoderMove = now;
+            lastEncoderMoveMs = now;
         }
     }
     lastCLK = clkState;
 }
 
+/**
+ * @brief Reads button state and generates short/long press events.
+ */
 static void readButton()
 {
     bool currentState = digitalRead(pinSW);
-    unsigned long now = millis();
+    uint32_t now = millis();
 
-    // Button pressed (falling edge)
-    if (lastButtonState == HIGH && currentState == LOW) {
+    /* Falling edge: button pressed */
+    if (lastButtonState == HIGH && currentState == LOW)
+    {
         buttonPressTime = now;
         longPressFired = false;
     }
 
-    // Button held down -> check long press timeout
-    if (currentState == LOW && !longPressFired) {
-        if (now - buttonPressTime >= buttonLongPressMs) {
+    /* Button held: long press detection */
+    if (currentState == LOW && longPressFired == false)
+    {
+        if (now - buttonPressTime >= LONG_PRESS_MS)
+        {
             EncoderEvent evt = BTN_LONG;
             xQueueSend(xUIQueue, &evt, 0);
             longPressFired = true;
         }
     }
 
-    // Button released (rising edge)
-    if (lastButtonState == LOW && currentState == HIGH) {
-
-        // Only send short press if long press never fired
-        if (!longPressFired) {
+    /* Rising edge: button released */
+    if (lastButtonState == LOW && currentState == HIGH)
+    {
+        if (!longPressFired)
+        {
             EncoderEvent evt = BTN_SHORT;
             xQueueSend(xUIQueue, &evt, 0);
         }
     }
-
     lastButtonState = currentState;
 }
 
+/**
+ * @brief Encoder polling task.
+ *
+ * Samples encoder rotation and push-button state.
+ * Sends UI events to the UI queue.
+ *
+ * @param pvParameters Unused.
+ */
 void TaskEncoder(void *pvParameters)
 {
-    lastCLK = digitalRead(pinCLK);
+    lastCLK         = digitalRead(pinCLK);
     lastButtonState = digitalRead(pinSW);
+    lastEncoderMoveMs = 0;
+    longPressFired  = false;
 
-    for (;;) {
+    for (;;)
+    {
         readEncoder();
         readButton();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
+/**
+ * @brief Initializes encoder GPIOs and creates encoder task.
+ *
+ * Configures encoder pins and starts the polling task.
+ */
 void TaskEncoder_init()
 {
     pinMode(pinCLK, INPUT);
     pinMode(pinDT,  INPUT);
     pinMode(pinSW,  INPUT_PULLUP);
-
-    xUIQueue = xQueueCreate(10, sizeof(EncoderEvent));
 
     xTaskCreatePinnedToCore(
         TaskEncoder,
@@ -90,6 +143,7 @@ void TaskEncoder_init()
         4096,
         NULL,
         1,
-        &taskEncoderHandle,
-        APP_CPU_NUM);
+        NULL,
+        APP_CPU_NUM
+    );
 }

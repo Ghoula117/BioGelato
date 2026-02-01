@@ -4,8 +4,6 @@
 #include "Config/config.h"
 #include <Arduino.h>
 #include "driver/ledc.h"
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
 const int MOTOR_PWM_PIN     = 21;
 #define MOTOR_PWM_CHANNEL  LEDC_CHANNEL_0
