@@ -1,10 +1,3 @@
-#ifndef CONFIG_H
-#define CONFIG_H
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-#include <stdint.h>
-
 /**
  * @file Config.h
  * @brief Global system configuration and inter-task communication definitions.
@@ -17,6 +10,12 @@
  * It acts as the communication contract between UI, Motor, Power,
  * Encoder, and Settings persistence subsystems.
  */
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <stdint.h>
 
 /**
  * @brief UI input event queue (encoder + buttons).
@@ -74,6 +73,7 @@ typedef enum
 {
     BUZZER_CMD_CLICK,
     BUZZER_CMD_CONFIRM,
+    BUZZER_CMD_ERROR,
     BUZZER_CMD_CYCLE_FINISHED
 }BuzzerCmdType;
 
@@ -99,7 +99,10 @@ typedef enum
     MOTOR_CMD_SET_SPEED,     /**< Set PWM speed only */
     MOTOR_CMD_START_TIMED,   /**< Start motor with timeout */
     MOTOR_CMD_STOP,          /**< Stop motor immediately */
-    MOTOR_CMD_CLEAN_SEQUENCE /**< Execute cleaning routine */
+    MOTOR_CMD_CLEAN_FAST,    /**< Execute fast cleaning routine */
+    MOTOR_CMD_CLEAN_SLOW,    /**< Execute slow cleaning routine */
+    MOTOR_CMD_CLEAN_PURGE,   /**< Execute purge cleaning routine */
+    MOTOR_CMD_CLEAN_MANUAL,  /**< Execute manual cleaning routine */
 }MotorCmdType;
 
 /**

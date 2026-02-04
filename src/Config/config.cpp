@@ -23,9 +23,9 @@ QueueHandle_t xBuzzerQueue   = nullptr;
  */
 void Config_init()
 {
-   xUIQueue       = xQueueCreate(4, sizeof(EncoderEvent)); configASSERT(xUIQueue);
+   xUIQueue       = xQueueCreate(10, sizeof(EncoderEvent)); configASSERT(xUIQueue);
    xMotorQueue    = xQueueCreate(4, sizeof(MotorCommand)); configASSERT(xMotorQueue);
    xPowerQueue    = xQueueCreate(2, sizeof(PowerCommand)); configASSERT(xPowerQueue);
    xSettingsQueue = xQueueCreate(2, sizeof(SettingsCommand)); configASSERT(xSettingsQueue);
-   xBuzzerQueue   = xQueueCreate(2, sizeof(BuzzerCommand)); configASSERT(xBuzzerQueue);
+   xBuzzerQueue   = xQueueCreate(4, sizeof(BuzzerCommand)); configASSERT(xBuzzerQueue);
 }

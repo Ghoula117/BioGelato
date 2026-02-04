@@ -8,6 +8,7 @@
 
 extern TFT_eSPI tft;
 
+#define VERSION_STRING "v1.0.0"
 #define TFT_GRAY 0x8410
 
 constexpr int SCREEN_WIDTH  = 160;
@@ -73,6 +74,7 @@ void UI_updateTimeSelect(int index);
 // ===========================
 
 void UI_drawReviewSystem();
+void UI_updateSystemSelect(int index);
 void UI_drawReviewSoft();
 
 // ===========================

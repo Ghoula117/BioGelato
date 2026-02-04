@@ -7,7 +7,6 @@
 // =====================
 // MENU DEFINITIONS
 // =====================
-
 const char* const mainMenuTitles[]    = {"INICIO", "SISTEMA", "AJUSTES"};
 const uint16_t* const mainMenuIcons[] = { homeIcon, systemIcon, settingsIcon };
 
@@ -22,15 +21,8 @@ const uint16_t* const settingsMenuIcons[] = { MotorTuningIcon, MotorTuningIcon, 
 // =====================
 static int confirmIndex = 0;
 
-static const uint32_t timeOptions[] = {
-    15 * 60 * 1000,
-    30 * 60 * 1000,
-    45 * 60 * 1000,
-    60 * 60 * 1000,
-    0
-};
-
-static int timeIndex = TIME_DEFAULT_INDEX;
+static uint8_t timeIndex = TIME_DEFAULT_INDEX;
+static uint8_t cleanModeIndex = 0;
 static int motorSpeed = 0;
 
 static UIState currentState = UI_STATE_INVALID;
@@ -96,6 +88,7 @@ static void handleConfirmDialog(EncoderEvent evt, void (*onAccept)(void), UIStat
             if (confirmIndex == 0)
             {
                 onAccept();
+                return;
             }
             UI_setState(cancelState);
             break;
@@ -107,16 +100,48 @@ static void handleConfirmDialog(EncoderEvent evt, void (*onAccept)(void), UIStat
     }
 }
 
+static inline uint8_t dicamicEncoder(uint32_t deltaTime, uint8_t& currentStep)
+{
+    
+    if (deltaTime < FAST_THRESHOLD_MS) {
+        uint8_t newStep = currentStep + STEP_INCREMENT;
+        currentStep = (newStep > MAX_STEP) ? MAX_STEP : newStep;
+    } 
+    else if (deltaTime > RESET_THRESHOLD_MS) {
+        currentStep = 1;
+    }
+    
+    return currentStep;
+}
+
+static inline uint8_t clampIndex(int v,uint8_t max)
+{
+    if(v < 0) return max - 1;
+    if(v >= max) return 0;
+    return (uint8_t)v;
+}
+
+static inline void sendMotorRequest(MotorCmdType type, int speed, uint32_t duration)
+{
+    MotorCommand cmd = {
+        .type = type,
+        .speed = speed,
+        .duration = duration
+    };
+        
+    configASSERT(xQueueSend(xMotorQueue, &cmd, 0) == pdPASS);
+}
+
 static void sendPowerRequeste()
 {
-    PowerCommand cmd;
+    PowerCommand cmd = {};
     cmd.type = POWER_CMD_SHUTDOWN;
     configASSERT(xQueueSend(xPowerQueue, &cmd, 0) == pdPASS);
 }
 
 static void sendSettingsSave()
 {
-    SettingsCommand cmd;
+    SettingsCommand cmd = {};
     cmd.type = SETTINGS_CMD_SAVE;
     cmd.data.motorSpeed = motorSpeed;
     cmd.data.timeIndex  = timeIndex;
@@ -131,11 +156,10 @@ void UI_applySettings(const SettingsPayload& data)
 
 static inline void sendBuzzerCommand(BuzzerCmdType type)
 {
-    BuzzerCommand cmd;
+    BuzzerCommand cmd = {};
     cmd.type = type;
     configASSERT(xQueueSend(xBuzzerQueue, &cmd, 0) == pdPASS);
 }
-
 
 // =====================
 // ENTRY HOOKS
@@ -170,6 +194,12 @@ static void enterSpeedControl()
 {
     UI_drawSpeedStatic();
     UI_updateSpeed(motorSpeed);
+}
+
+static void enterReviewSystem()
+{
+    UI_drawReviewSystem();
+    UI_updateSystemSelect(cleanModeIndex);
 }
 
 static void enterReviewSaveConfirm()
@@ -215,12 +245,13 @@ static void handleTimeSelect(EncoderEvent evt)
     switch(evt)
     {
         case ENC_LEFT:
-            timeIndex--;
+            timeIndex = clampIndex(timeIndex - 1, TIME_OPTION_COUNT);
             break;
         case ENC_RIGHT:
-            timeIndex++;
+            timeIndex = clampIndex(timeIndex + 1, TIME_OPTION_COUNT);
             break;
         case BTN_SHORT:
+            sendMotorRequest(MOTOR_CMD_START_TIMED, 0, timeOptions[timeIndex]);
             sendBuzzerCommand(BUZZER_CMD_CONFIRM);
             UI_setState(MENU_MAIN_SPEED_CONTROL);
             return;
@@ -229,50 +260,80 @@ static void handleTimeSelect(EncoderEvent evt)
             return;
         default: return;
     }
-
-    if(timeIndex < 0) timeIndex = TIME_OPTION_COUNT - 1;
-    if(timeIndex >= TIME_OPTION_COUNT) timeIndex = 0;
-
     UI_updateTimeSelect(timeIndex);
 }
 
 static void handleSpeedControl(EncoderEvent evt)
 {
+    static uint32_t lastChangeTime = 0;
+    static uint8_t speedStep = 1;
+    static bool wasAtLimit = false;
+    
     switch(evt)
     {
         case ENC_LEFT:
-            motorSpeed--;
-            break;
-        case ENC_RIGHT:
-            motorSpeed++;
-            break;
-        case BTN_SHORT:
         {
-            MotorCommand cmd;
-            cmd.type  = MOTOR_CMD_SET_SPEED;
-            cmd.speed = motorSpeed;
-            xQueueSend(xMotorQueue, &cmd, 0);
-            sendBuzzerCommand(BUZZER_CMD_CONFIRM);
-            return;
+            uint32_t now = millis();
+            uint32_t deltaTime = now - lastChangeTime;
+            
+            uint8_t step = dicamicEncoder(deltaTime, speedStep);
+            
+            int newSpeed = motorSpeed - step;
+            bool hitLimit = (newSpeed < 0);
+            
+            motorSpeed = constrain(newSpeed, 0, 100);
+            
+            lastChangeTime = now;
+            
+            if (hitLimit && !wasAtLimit) {
+                speedStep = 1;
+                sendBuzzerCommand(BUZZER_CMD_ERROR);
+                wasAtLimit = true;
+            }
+            else if (!hitLimit) {
+                wasAtLimit = false;
+            }
+            break;
         }
-
+            
+        case ENC_RIGHT:
+        {
+            uint32_t now = millis();
+            uint32_t deltaTime = now - lastChangeTime;
+            
+            uint8_t step = dicamicEncoder(deltaTime, speedStep);
+            
+            int newSpeed = motorSpeed + step;
+            bool hitLimit = (newSpeed > 100);
+            
+            motorSpeed = constrain(newSpeed, 0, 100);
+            
+            lastChangeTime = now;
+            
+            if (hitLimit && !wasAtLimit) {
+                speedStep = 1;
+                sendBuzzerCommand(BUZZER_CMD_ERROR);
+                wasAtLimit = true;
+            }
+            else if (!hitLimit) {
+                wasAtLimit = false;
+            }
+            break;
+        }
+        case BTN_SHORT:
+            sendMotorRequest(MOTOR_CMD_SET_SPEED, motorSpeed, 0);
+            sendBuzzerCommand(BUZZER_CMD_CONFIRM);
+            speedStep = 1;
+            wasAtLimit = false;
+            return;
         case BTN_LONG:
+            speedStep = 1;
+            wasAtLimit = false;
             UI_setState(MENU_MAIN_TIME_SELECT);
             return;
         default: return;
     }
-
-    if(motorSpeed < 0)
-    {
-        motorSpeed = 0;
-        sendBuzzerCommand(BUZZER_CMD_CLICK);
-    } 
-    if(motorSpeed > 100)
-    {
-        motorSpeed = 100;
-        sendBuzzerCommand(BUZZER_CMD_CLICK);
-    }
-
+    
     UI_updateSpeed(motorSpeed);
 }
 
@@ -293,8 +354,24 @@ static void handleReview(EncoderEvent evt)
 
 static void handleReviewSystem(EncoderEvent evt)
 {
-    if (evt == BTN_LONG)
-        UI_setState(MENU_MAIN_REVIEW);
+    switch(evt)
+    {
+        case ENC_LEFT:
+            cleanModeIndex = clampIndex(cleanModeIndex - 1, CLEAN_OPTION_COUNT);
+            break;
+        case ENC_RIGHT:
+            cleanModeIndex = clampIndex(cleanModeIndex + 1, CLEAN_OPTION_COUNT);
+            break;
+        case BTN_SHORT:
+            sendMotorRequest(cleanCmdMap[cleanModeIndex], 0, 0);
+            sendBuzzerCommand(BUZZER_CMD_CONFIRM);
+            return;
+        case BTN_LONG:
+            UI_setState(MENU_MAIN_REVIEW);
+            return;
+        default: return;
+    }
+    UI_updateSystemSelect(cleanModeIndex);
 }
 
 static void handleReviewSaveConfirm(EncoderEvent evt)
@@ -361,13 +438,13 @@ static const UIStateTable stateTable[] = {
     { enterSystemMenu,   handleReview,       nullptr },
 
     // MENU_REVIEW_SYSTEM
-    { UI_drawReviewSystem, handleReviewSystem,   nullptr },
+    { enterReviewSystem, handleReviewSystem,   nullptr },
 
     // MENU_REVIEW_SOFTWARE
     { UI_drawReviewSoft, handleReviewSoft,   nullptr },
 
     // MENU_REVIEW_SAVE_CONFIRM
-    { enterReviewSaveConfirm , handleReviewSaveConfirm,   nullptr },
+    { enterReviewSaveConfirm, handleReviewSaveConfirm,   nullptr },
 
     // MENU_MAIN_SETTINGS
     { enterSettingsMenu, handleSettings,     nullptr },

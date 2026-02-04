@@ -13,7 +13,29 @@
 #include "Config/config.h"
 #include "images/icons.h"
 
-#define TIME_OPTION_COUNT 5
+static const uint32_t timeOptions[] = {
+    15 * 60 * 1000,
+    30 * 60 * 1000,
+    45 * 60 * 1000,
+    60 * 60 * 1000,
+    0
+};
+
+static const MotorCmdType cleanCmdMap[] =
+{
+    MOTOR_CMD_CLEAN_FAST,
+    MOTOR_CMD_CLEAN_SLOW,
+    MOTOR_CMD_CLEAN_PURGE,
+    MOTOR_CMD_CLEAN_MANUAL
+};
+
+constexpr uint32_t FAST_THRESHOLD_MS = 80;
+constexpr uint32_t RESET_THRESHOLD_MS = 300;
+constexpr uint8_t MAX_STEP = 10;
+constexpr uint8_t STEP_INCREMENT = 2;
+
+#define CLEAN_OPTION_COUNT (sizeof(cleanCmdMap)/sizeof(cleanCmdMap[0]))
+#define TIME_OPTION_COUNT (sizeof(timeOptions)/sizeof(timeOptions[0]))
 #define TIME_DEFAULT_INDEX (TIME_OPTION_COUNT - 1)
 
 /**
@@ -47,7 +69,7 @@ extern const uint16_t* const settingsMenuIcons[MENU_COUNT];
     MENU_MAIN_SPEED_CONTROL, /**< Speed control submenu */
 
     MENU_MAIN_REVIEW,        /**< Review submenu */
-    MENU_REVIEW_SYSTEM, /**< "System" option */
+    MENU_REVIEW_SYSTEM,      /**< "System" option */
     MENU_REVIEW_SAVE_CONFIRM,/**< "Save data" option */
     MENU_REVIEW_SOFTWARE,    /**< "Software" option */
 

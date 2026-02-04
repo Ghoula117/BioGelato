@@ -19,9 +19,18 @@ void TaskBuzzer(void *pvParameters)
                     for (int i = 0; i < 2; i++)
                     {
                         digitalWrite(BUZZER_PIN, LOW);
-                        vTaskDelay(pdMS_TO_TICKS(40));
+                        vTaskDelay(pdMS_TO_TICKS(80));
                         digitalWrite(BUZZER_PIN, HIGH);
-                        vTaskDelay(pdMS_TO_TICKS(40));
+                        vTaskDelay(pdMS_TO_TICKS(20));
+                    }
+                    break;
+                case BUZZER_CMD_ERROR:
+                    for (int i = 0; i < 3; i++)
+                    {
+                        digitalWrite(BUZZER_PIN, LOW);
+                        vTaskDelay(pdMS_TO_TICKS(20));
+                        digitalWrite(BUZZER_PIN, HIGH);
+                        vTaskDelay(pdMS_TO_TICKS(20));
                     }
                     break;
                 case BUZZER_CMD_CYCLE_FINISHED:

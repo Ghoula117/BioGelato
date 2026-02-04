@@ -170,7 +170,7 @@ void UI_updateTimeSelect(int index)
 
     tft.setTextDatum(MR_DATUM);
     tft.setFreeFont(&FreeSans12pt7b);
-    tft.setTextColor(TFT_GRAY, TFT_BLACK);
+    tft.setTextColor(TFT_BLUE, TFT_BLACK);
 
     int centerX = SCREEN_WIDTH  / 2 + 70;
     int centerY = SCREEN_HEIGHT / 2 + 20;
@@ -182,15 +182,34 @@ void UI_updateTimeSelect(int index)
 // ===========================
 // SIMPLE STATIC SCREENS
 // ===========================
+static const char* CleanLabels[] ={
+    "RAPIDO", "LENTO", "PURGA", "MANUAL"
+};
+
 void UI_drawReviewSystem()
 {
     UI_drawHeader("LIMPIEZA", nullptr);
 }
 
+void UI_updateSystemSelect(int index)
+{
+    tft.fillRect(0, SCREEN_HEIGHT / MENU_COUNT, SCREEN_WIDTH, SCREEN_HEIGHT, TFT_BLACK);
+
+    tft.setTextDatum(MC_DATUM);
+    tft.setFreeFont(&FreeSans9pt7b);
+    tft.setTextColor(TFT_BLUE, TFT_BLACK);
+
+    int centerX = SCREEN_WIDTH  / 2;
+    int centerY = SCREEN_HEIGHT / 2 + 20;
+    tft.drawString(CleanLabels[index], centerX, centerY);
+
+    tft.setFreeFont(nullptr);
+}
+
 void UI_drawReviewSoft()
 {
     tft.fillScreen(TFT_BLACK);
-    UI_drawHeader("v1.0.0", nullptr);
+    UI_drawHeader(VERSION_STRING, nullptr);
 
     const int iconSize = 64;
 

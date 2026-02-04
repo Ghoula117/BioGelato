@@ -4,7 +4,7 @@
 #include "Config/config.h"
 #include <Arduino.h>
 
-const int BUZZER_PIN     = 20;
+const int BUZZER_PIN     = 47;
 
 void TaskBuzzer(void *pvParameters);
 void TaskBuzzer_init();
