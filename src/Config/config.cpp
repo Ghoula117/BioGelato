@@ -2,7 +2,7 @@
  * @file Config.cpp
  * @brief Global system queue initialization.
  */
-#include "config/config.h"
+#include "Config/config.h"
 
 /* =========================
    QUEUE DEFINITIONS

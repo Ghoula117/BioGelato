@@ -39,17 +39,72 @@ static CleanState cleanState = {
     .isMotorOn = false
 };
 
-void Motor_setSpeed(int percent)
+static uint32_t speedToDutyExponential(uint8_t percent)
 {
-    if (percent < 0)   percent = 0;
-    if (percent > 100) percent = 100;
-    
-    uint32_t duty = (uint32_t)percent * ((1UL << LEDC_TIMER_10_BIT) - 1) / 100;
-    
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL));
+    // percent: 1–100
+    float x = percent / 100.0f;
+    float y = x * x;                 // curva exponencial (x²)
+
+    // Mapear a rango útil del motor: 60%–100%
+    float mapped = 0.6f + 0.4f * y;  // 0.6 → 1.0
+
+    return (uint32_t)(mapped * MAX_DUTY);
 }
 
+static void kickstartCallback(TimerHandle_t)
+{
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, kickstartTargetDuty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+}
+
+void Motor_setSpeed(int percent)
+{
+    // Clamp
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+
+    // --- Motor OFF ---
+    if (percent == 0)
+    {
+        if (kickstartTimer)
+            xTimerStop(kickstartTimer, 0);
+
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, 0);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+        return;
+    }
+
+    // Calcular duty objetivo con curva exponencial
+    kickstartTargetDuty = speedToDutyExponential(percent);
+
+    // --- Kickstart para bajas velocidades ---
+    if (percent < KICKSTART_THRESHOLD)
+    {
+        // Aplicar impulso al 100%
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, MAX_DUTY);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+
+        if (!kickstartTimer)
+        {
+            kickstartTimer = xTimerCreate(
+                "Kickstart",
+                pdMS_TO_TICKS(KICKSTART_MS),
+                pdFALSE,
+                nullptr,
+                kickstartCallback
+            );
+        }
+
+        xTimerStop(kickstartTimer, 0);
+        xTimerStart(kickstartTimer, 0);
+    }
+    else
+    {
+        // Velocidad normal (sin kickstart)
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, kickstartTargetDuty);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+    }
+}
 
 /**
  * @brief Stops all motor operations and timers.
