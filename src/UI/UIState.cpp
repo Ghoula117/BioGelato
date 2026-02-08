@@ -7,14 +7,11 @@
 // =====================
 // MENU DEFINITIONS
 // =====================
-const char* const mainMenuTitles[]    = {"INICIO", "SISTEMA", "AJUSTES"};
-const uint16_t* const mainMenuIcons[] = { homeIcon, systemIcon, settingsIcon };
+const char* const mainMenuTitles[]    = {"INICIO", "SISTEMA", "APAGAR"};
+const uint16_t* const mainMenuIcons[] = { homeIcon, systemIcon, PowerOffIcon };
 
 const char* const systemMenuTitles[]    = {"LIMPIEZA", "INFO", "GUARDAR"};
 const uint16_t* const systemMenuIcons[] = { homeIcon, aboutIcon, SaveIcon };
-
-const char* const settingsMenuTitles[]    = {"ALGO", "MOTOR", "APAGAR"};
-const uint16_t* const settingsMenuIcons[] = { MotorTuningIcon, MotorTuningIcon, PowerOffIcon };
 
 // =====================
 // INTERNAL VARIABLES
@@ -49,7 +46,6 @@ static void handleGenericMenu(EncoderEvent evt,
                               const UIState* transitions)
 {
     switch (evt) {
-
         case ENC_LEFT:
             currentMenu--;
             break;
@@ -88,6 +84,7 @@ static void handleConfirmDialog(EncoderEvent evt, void (*onAccept)(void), UIStat
             if (confirmIndex == 0)
             {
                 onAccept();
+                UI_setState(cancelState);
                 return;
             }
             UI_setState(cancelState);
@@ -123,12 +120,15 @@ static inline uint8_t clampIndex(int v,uint8_t max)
 
 static inline void sendMotorRequest(MotorCmdType type, int speed, uint32_t duration)
 {
+    if (speed < 0)   speed = 0;
+    if (speed > 100) speed = 100;
+
     MotorCommand cmd = {
-        .type = type,
-        .speed = speed,
+        .type     = type,
+        .speed    = (uint8_t)speed,
         .duration = duration
     };
-        
+
     configASSERT(xQueueSend(xMotorQueue, &cmd, 0) == pdPASS);
 }
 
@@ -179,11 +179,6 @@ static void enterSystemMenu()
     UI_enterMenu(systemMenuTitles, systemMenuIcons);
 }
 
-static void enterSettingsMenu()
-{
-    UI_enterMenu(settingsMenuTitles, settingsMenuIcons);
-}
-
 static void enterTimeSelect()
 {
     UI_drawTimeSelectStatic();
@@ -196,22 +191,22 @@ static void enterSpeedControl()
     UI_updateSpeed(motorSpeed);
 }
 
-static void enterReviewSystem()
+static void enterSystem()
 {
     UI_drawReviewSystem();
     UI_updateSystemSelect(cleanModeIndex);
 }
 
-static void enterReviewSaveConfirm()
+static void enterSaveConfirm()
 {
     confirmIndex = 0;
-    UI_drawConfirmStatic("¿GUARDAR?", SaveIcon);
+    UI_drawConfirmStatic("GUARDAR?", SaveIcon);
 }
 
 static void enterPowerOff()
 {
     confirmIndex = 0;
-    UI_drawConfirmStatic("¿APAGAR?", PowerOffIcon);
+    UI_drawConfirmStatic("APAGAR?", PowerOffIcon);
 }
 
 // =====================
@@ -230,7 +225,7 @@ static void handleMainMenu(EncoderEvent evt)
     static const UIState transitions[] = {
         MENU_MAIN_TIME_SELECT,
         MENU_MAIN_REVIEW,
-        MENU_MAIN_SETTINGS
+        MENU_POWER_OFF
     };
 
     handleGenericMenu(evt,
@@ -337,7 +332,7 @@ static void handleSpeedControl(EncoderEvent evt)
     UI_updateSpeed(motorSpeed);
 }
 
-static void handleReview(EncoderEvent evt)
+static void handleSystemMenu(EncoderEvent evt)
 {
     static const UIState transitions[] = {
         MENU_REVIEW_SYSTEM,
@@ -352,7 +347,7 @@ static void handleReview(EncoderEvent evt)
                       transitions);
 }
 
-static void handleReviewSystem(EncoderEvent evt)
+static void handleSystem(EncoderEvent evt)
 {
     switch(evt)
     {
@@ -374,47 +369,20 @@ static void handleReviewSystem(EncoderEvent evt)
     UI_updateSystemSelect(cleanModeIndex);
 }
 
-static void handleReviewSaveConfirm(EncoderEvent evt)
+static void handleSaveConfirm(EncoderEvent evt)
 {
     handleConfirmDialog(evt, sendSettingsSave, MENU_MAIN_REVIEW);
 }
 
-static void handleReviewSoft(EncoderEvent evt)
+static void handleSoftInfo(EncoderEvent evt)
 {
     if (evt == BTN_LONG)
         UI_setState(MENU_MAIN_REVIEW);
 }
 
-static void handleSettings(EncoderEvent evt)
-{
-    static const UIState transitions[] = {
-        MENU_SETTINGS_WIFI,
-        MENU_SETTINGS_MOTOR,
-        MENU_SETTINGS_POWER_OFF
-    };
-
-    handleGenericMenu(evt,
-                      settingsMenuTitles,
-                      settingsMenuIcons,
-                      MENU_COUNT,
-                      transitions);
-}
-
-static void handleSettingsWifi(EncoderEvent evt)
-{
-    if (evt == BTN_LONG)
-        UI_setState(MENU_MAIN_SETTINGS);
-}
-
-static void handleSettingsMotor(EncoderEvent evt)
-{
-    if (evt == BTN_LONG)
-        UI_setState(MENU_MAIN_SETTINGS);
-}
-
 static void handleSettingsPowerOff(EncoderEvent evt)
 {
-    handleConfirmDialog(evt, sendPowerRequeste, MENU_MAIN_SETTINGS);
+    handleConfirmDialog(evt, sendPowerRequeste, MENU_MAIN);
 }
 
 // =====================
@@ -435,25 +403,16 @@ static const UIStateTable stateTable[] = {
     { enterSpeedControl, handleSpeedControl, nullptr },
 
     // MENU_MAIN_REVIEW
-    { enterSystemMenu,   handleReview,       nullptr },
+    { enterSystemMenu,   handleSystemMenu,       nullptr },
 
     // MENU_REVIEW_SYSTEM
-    { enterReviewSystem, handleReviewSystem,   nullptr },
+    { enterSystem, handleSystem,   nullptr },
 
     // MENU_REVIEW_SOFTWARE
-    { UI_drawReviewSoft, handleReviewSoft,   nullptr },
+    { UI_drawReviewSoft, handleSoftInfo,   nullptr },
 
     // MENU_REVIEW_SAVE_CONFIRM
-    { enterReviewSaveConfirm, handleReviewSaveConfirm,   nullptr },
-
-    // MENU_MAIN_SETTINGS
-    { enterSettingsMenu, handleSettings,     nullptr },
-
-    // MENU_SETTINGS_WIFI
-    { UI_drawSettingsWifi,  handleSettingsWifi,  nullptr },
-
-    // MENU_SETTINGS_MOTOR
-    { UI_drawSettingsMotor, handleSettingsMotor, nullptr },
+    { enterSaveConfirm, handleSaveConfirm,   nullptr },
 
     // MENU_SETTINGS_POWER_OFF
     { enterPowerOff,        handleSettingsPowerOff, nullptr }

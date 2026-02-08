@@ -3,6 +3,7 @@
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite iconSprite = TFT_eSprite(&tft);
 TFT_eSprite bigIconSprite = TFT_eSprite(&tft);
+TFT_eSprite logoIconSprite = TFT_eSprite(&tft);
 
 void UI_init()
 {
@@ -18,13 +19,12 @@ void UI_init()
     bigIconSprite.setSwapBytes(true);
     bigIconSprite.createSprite(ICON_WIDTH*2, ICON_HEIGHT*2);
 
+    logoIconSprite.setSwapBytes(true);
+    logoIconSprite.createSprite(ICON_WIDTH*4, ICON_HEIGHT*4);
+
     pinMode(pinLEDTFT, OUTPUT);
     digitalWrite(pinLEDTFT, LOW);
 }
-
-// ===========================
-// ICON
-// ===========================
 
 void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon)
 {
@@ -32,10 +32,6 @@ void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon)
     iconSprite.pushImage(0, 0, ICON_WIDTH, ICON_HEIGHT, icon);
     iconSprite.pushSprite(x, y, TFT_BLACK);
 }
-
-// ===========================
-// MENU SYSTEM
-// ===========================
 
 static void UI_drawMenuItem(const char* title, const uint16_t* icon, int y, bool selected)
 {
@@ -47,7 +43,7 @@ static void UI_drawMenuItem(const char* title, const uint16_t* icon, int y, bool
     uint16_t bg = selected ? TFT_WHITE : TFT_BLACK;
     uint16_t fg = selected ? TFT_BLACK : TFT_DARKGREY;
 
-    tft.fillRect(0, y, SCREEN_WIDTH, sectionHeight, bg);
+    tft.fillRect(0, y, SCREEN_WIDTH, sectionHeight + 2, bg);
 
     if(icon)
         UI_drawIcon(ICON_X, iconY, icon);
@@ -81,10 +77,6 @@ static void UI_drawHeader(const char* title, const uint16_t* icon)
     UI_drawMenuItem(title, icon, MENU_COUNT/MENU_COUNT, true);
 }
 
-// ===========================
-// CONFIRM DIALOG
-// ===========================
-
 void UI_drawConfirmStatic(const char* title, const uint16_t* icon)
 {
     UI_drawHeader(title, icon);
@@ -113,21 +105,35 @@ void UI_drawConfirmButtons(int selected)
     tft.drawString("NO", noX + BTN_W / 2, BTN_Y + BTN_H / 2);
 }
 
-// ===========================
-// BOOT LOGO
-// ===========================
-
 void UI_drawBootLogo()
 {
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("BioGelato", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-}
+    tft.fillScreen(TFT_WHITE);
 
-// ===========================
-// SPEED SCREEN
-// ===========================
+    const int iconSize = 128;
+    logoIconSprite.fillSprite(TFT_BLACK);
+    logoIconSprite.pushImage(0, 0, iconSize, iconSize, LogoIcon);
+    logoIconSprite.pushSprite(SCREEN_WIDTH/2 - iconSize/2, SCREEN_HEIGHT/2 - iconSize/2, TFT_BLACK);
+
+    tft.setFreeFont(&FreeSerifBoldItalic9pt7b);
+
+    const char* text1 = "Bio";
+    const char* text2 = "Gelato";
+
+    int w1 = tft.textWidth(text1);
+    int w2 = tft.textWidth(text2);
+    int totalWidth = w1 + w2;
+
+    int x = (SCREEN_WIDTH - totalWidth) / 2;
+    int y = SCREEN_HEIGHT / 2;
+
+    tft.setTextColor(TFT_BLUE);
+    tft.drawString(text1, x, y);
+
+    tft.setTextColor(TFT_DARKGREEN);
+    tft.drawString(text2, x + w1, y);
+
+    tft.setFreeFont(nullptr);
+}
 
 void UI_drawSpeedStatic()
 {
@@ -143,7 +149,7 @@ void UI_updateSpeed(int speed)
 
     tft.setTextDatum(MR_DATUM);
     tft.setFreeFont(&FreeSans24pt7b);
-    tft.setTextColor(TFT_GRAY, TFT_BLACK);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
 
     int centerX = SCREEN_WIDTH  / 2 + 70;
     int centerY = SCREEN_HEIGHT / 2 + 20;
@@ -152,9 +158,6 @@ void UI_updateSpeed(int speed)
     tft.setFreeFont(nullptr);
 }
 
-// ===========================
-// TIME SELECT SCREEN
-// ===========================
 static const char* timeLabels[] ={
     "15 MIN", "30 MIN", "45 MIN", "60 MIN", "CONT"
 };
@@ -179,9 +182,6 @@ void UI_updateTimeSelect(int index)
     tft.setFreeFont(nullptr);
 }
 
-// ===========================
-// SIMPLE STATIC SCREENS
-// ===========================
 static const char* CleanLabels[] ={
     "RAPIDO", "LENTO", "PURGA", "MANUAL"
 };
@@ -216,14 +216,4 @@ void UI_drawReviewSoft()
     bigIconSprite.fillSprite(TFT_BLACK);
     bigIconSprite.pushImage(0, 0, iconSize, iconSize, QRIcon);
     bigIconSprite.pushSprite(SCREEN_WIDTH/2 -35, SCREEN_HEIGHT/2 - 10, TFT_BLACK);
-}
-
-void UI_drawSettingsWifi()
-{
-    UI_drawHeader("WIFI", nullptr);
-}
-
-void UI_drawSettingsMotor()
-{
-    UI_drawHeader("MOTOR", nullptr);
 }

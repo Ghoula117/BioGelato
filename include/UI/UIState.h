@@ -73,10 +73,7 @@ extern const uint16_t* const settingsMenuIcons[MENU_COUNT];
     MENU_REVIEW_SAVE_CONFIRM,/**< "Save data" option */
     MENU_REVIEW_SOFTWARE,    /**< "Software" option */
 
-    MENU_MAIN_SETTINGS,      /**< Settings submenu */
-    MENU_SETTINGS_WIFI,      /**< "WiFi" option */
-    MENU_SETTINGS_MOTOR,     /**< "Motor" option */
-    MENU_SETTINGS_POWER_OFF, /**< "Power Off" option */
+    MENU_POWER_OFF, /**< "Power Off" option */
 
     UI_STATE_COUNT           /**< Total number of states */
 };

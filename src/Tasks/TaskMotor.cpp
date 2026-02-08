@@ -41,12 +41,10 @@ static CleanState cleanState = {
 
 static uint32_t speedToDutyExponential(uint8_t percent)
 {
-    // percent: 1–100
     float x = percent / 100.0f;
-    float y = x * x;                 // curva exponencial (x²)
+    float y = x * x;             
 
-    // Mapear a rango útil del motor: 60%–100%
-    float mapped = 0.6f + 0.4f * y;  // 0.6 → 1.0
+    float mapped = 0.4f + 0.4f * y;  // 0.6 → 1.0
 
     return (uint32_t)(mapped * MAX_DUTY);
 }
@@ -59,11 +57,9 @@ static void kickstartCallback(TimerHandle_t)
 
 void Motor_setSpeed(int percent)
 {
-    // Clamp
     if (percent < 0)   percent = 0;
     if (percent > 100) percent = 100;
 
-    // --- Motor OFF ---
     if (percent == 0)
     {
         if (kickstartTimer)
@@ -74,13 +70,10 @@ void Motor_setSpeed(int percent)
         return;
     }
 
-    // Calcular duty objetivo con curva exponencial
     kickstartTargetDuty = speedToDutyExponential(percent);
 
-    // --- Kickstart para bajas velocidades ---
     if (percent < KICKSTART_THRESHOLD)
     {
-        // Aplicar impulso al 100%
         ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, MAX_DUTY);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
 
@@ -100,7 +93,6 @@ void Motor_setSpeed(int percent)
     }
     else
     {
-        // Velocidad normal (sin kickstart)
         ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, kickstartTargetDuty);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
     }
