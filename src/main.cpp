@@ -19,7 +19,7 @@ void setup()
     TaskMotor_init();
     TaskBuzzer_init();
 
-    if(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) UI_setState(MENU_MAIN);
+    if(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) UI_setState(MENU_INIT);
 }
 
 void loop()

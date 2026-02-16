@@ -17,7 +17,7 @@ constexpr int ICON_X        = 4;
 constexpr int TEXT_X        = 44;
 constexpr int TEXT_HEIGHT   = 16;
 
-constexpr int MENU_COUNT    = 3;
+constexpr int MENU_COUNT    =  3;
 
 constexpr int BTN_Y         = 80;
 constexpr int BTN_W         = 60;
@@ -33,8 +33,8 @@ void UI_init();
 // ===========================
 // MENU SYSTEM
 // ===========================
-void UI_drawMenu(const char* const titles[], const uint16_t* const icons[]);
-void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons, int last, int current);
+void UI_drawMenu(const char* const titles[], const uint16_t* const icons[], int items);
+void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons, int last, int current, int items);
 void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon);
 
 // ===========================

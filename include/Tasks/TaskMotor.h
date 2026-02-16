@@ -27,11 +27,8 @@ const int MOTOR_PWM_PIN =   21;
 #define MOTOR_PWM_TIMER    LEDC_TIMER_0
 
 #define MAX_DUTY            ((1UL << LEDC_TIMER_10_BIT) - 1)
-#define KICKSTART_THRESHOLD 60        // %
-#define KICKSTART_MS        100        // ms
+static constexpr uint32_t KICKSTART_MS = 350;
 
-static TimerHandle_t kickstartTimer = nullptr;
-static uint32_t kickstartTargetDuty = 0;
 
 /**
  * @brief Cleaning sequence configuration profile.

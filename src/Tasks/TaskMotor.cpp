@@ -2,35 +2,36 @@
  * @file TaskMotor.cpp
  * @brief Motor control task implementation.
  */
+
 #include "Tasks/TaskMotor.h"
 
-/**
- * @brief Cleaning profile PURGE mode duration (1 min).
- */
-static constexpr uint32_t PURGE_DURATION_MS = 60000; 
+/* =========================
+   CONSTANTS
+   ========================= */
 
-/**
- * @brief TaskMotor One-shot timer (TIMED, PURGE)
- */
-static TimerHandle_t motorTimeoutTimer;
+static constexpr uint32_t PURGE_DURATION_MS = 60000;
 
-/**
- * @brief TaskMotor Periodic timer (cleaning sequences)
- */
-static TimerHandle_t motorCycleTimer;
+/* =========================
+   PRIVATE STATE
+   ========================= */
+static TimerHandle_t kickstartTimer = nullptr;
+static uint32_t kickstartTargetDuty = 0;
+static bool motorRunning = false;
 
-/**
- * @brief Macro for safe profile access.
- */
+// Timers
+static TimerHandle_t motorTimeoutTimer = nullptr;
+static TimerHandle_t motorCycleTimer   = nullptr;
+
+/* =========================
+   CLEAN STATE
+   ========================= */
+
 #define GET_CLEAN_PROFILE(mode) (&cleanProfiles[(mode) - MOTOR_CMD_CLEAN_FAST])
 
-/**
- * @brief Cleaning sequence runtime state.
- */
 struct CleanState {
-    MotorCmdType mode;       ///< Current cleaning mode
-    uint8_t      cyclesLeft; ///< Remaining cycles
-    bool         isMotorOn;  ///< Current phase (ON/OFF)
+    MotorCmdType mode;
+    uint8_t      cyclesLeft;
+    bool         isMotorOn;
 };
 
 static CleanState cleanState = {
@@ -39,7 +40,10 @@ static CleanState cleanState = {
     .isMotorOn = false
 };
 
-static uint32_t speedToDutyExponential(uint8_t percent)
+/* =========================
+   HELPERS
+   ========================= */
+static uint32_t speedToDuty(uint8_t percent)
 {
     float x = percent / 100.0f;
     float y = x * x;             
@@ -49,19 +53,24 @@ static uint32_t speedToDutyExponential(uint8_t percent)
     return (uint32_t)(mapped * MAX_DUTY);
 }
 
+/* =========================
+   KICKSTART CALLBACK
+   ========================= */
 static void kickstartCallback(TimerHandle_t)
 {
     ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, kickstartTargetDuty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
 }
 
+/* =========================
+   MOTOR CONTROL
+   ========================= */
 void Motor_setSpeed(int percent)
 {
-    if (percent < 0)   percent = 0;
-    if (percent > 100) percent = 100;
-
-    if (percent == 0)
+    if (percent <= 0)
     {
+        motorRunning = false;
+
         if (kickstartTimer)
             xTimerStop(kickstartTimer, 0);
 
@@ -70,23 +79,17 @@ void Motor_setSpeed(int percent)
         return;
     }
 
-    kickstartTargetDuty = speedToDutyExponential(percent);
+    if (percent > 100)
+        percent = 100;
 
-    if (percent < KICKSTART_THRESHOLD)
+    kickstartTargetDuty = speedToDuty(percent);
+
+    if (!motorRunning)
     {
+        motorRunning = true;
+
         ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, MAX_DUTY);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
-
-        if (!kickstartTimer)
-        {
-            kickstartTimer = xTimerCreate(
-                "Kickstart",
-                pdMS_TO_TICKS(KICKSTART_MS),
-                pdFALSE,
-                nullptr,
-                kickstartCallback
-            );
-        }
 
         xTimerStop(kickstartTimer, 0);
         xTimerStart(kickstartTimer, 0);
@@ -98,77 +101,63 @@ void Motor_setSpeed(int percent)
     }
 }
 
-/**
- * @brief Stops all motor operations and timers.
- */
+/* =========================
+   STOP & NOTIFY
+   ========================= */
 static void stopAllMotorOperations()
 {
     Motor_setSpeed(0);
+
     xTimerStop(motorTimeoutTimer, 0);
     xTimerStop(motorCycleTimer, 0);
-    
+
     cleanState.mode = MOTOR_CMD_STOP;
     cleanState.cyclesLeft = 0;
     cleanState.isMotorOn = false;
 }
 
-/**
- * @brief Notifies completion with buzzer feedback.
- */
 static void notifyCompletion()
 {
-    //sendBuzzerCommand(BUZZER_CMD_CYCLE_FINISHED);
+    sendBuzzerCommand(BUZZER_CMD_CYCLE_FINISHED);
 }
 
 /* =========================
    TIMER CALLBACKS
    ========================= */
-
-/**
- * @brief One-shot timeout callback (for TIMED and PURGE modes).
- * 
- * Context: FreeRTOS timer daemon task.
- */
-static void motorTimeoutCallback(TimerHandle_t xTimer)
+static void motorTimeoutCallback(TimerHandle_t)
 {
     stopAllMotorOperations();
     notifyCompletion();
 }
 
-/**
- * @brief Periodic cycle callback (for cleaning sequences).
- * 
- * Manages ON/OFF phase transitions and cycle counting.
- * Context: FreeRTOS timer daemon task.
- */
-static void motorCycleCallback(TimerHandle_t xTimer)
+static void motorCycleCallback(TimerHandle_t)
 {
-   
+    if(cleanState.mode < MOTOR_CMD_CLEAN_FAST || cleanState.mode > MOTOR_CMD_CLEAN_MANUAL)
+        return;
+
     const CleanProfile* profile = GET_CLEAN_PROFILE(cleanState.mode);
-    
-    if (cleanState.isMotorOn) {
-        // Transition: ON → OFF
+
+    if(cleanState.isMotorOn)
+    {
         Motor_setSpeed(0);
         cleanState.isMotorOn = false;
-        cleanState.cyclesLeft--;
-        
-        // Check completion
-        if (cleanState.cyclesLeft == 0) {
+
+        if(cleanState.cyclesLeft > 0)
+            cleanState.cyclesLeft--;
+
+        if(cleanState.cyclesLeft == 0)
+        {
             xTimerStop(motorCycleTimer, 0);
             cleanState.mode = MOTOR_CMD_STOP;
             notifyCompletion();
             return;
         }
-        
-        // Schedule next OFF period
         xTimerChangePeriod(motorCycleTimer, pdMS_TO_TICKS(profile->offTimeMs), 0);
     }
-    else {
-        // Transition: OFF → ON
+    else
+    {
         Motor_setSpeed(profile->speed);
         cleanState.isMotorOn = true;
-        
-        // Schedule next ON period
         xTimerChangePeriod(motorCycleTimer, pdMS_TO_TICKS(profile->onTimeMs), 0);
     }
 }
@@ -176,71 +165,57 @@ static void motorCycleCallback(TimerHandle_t xTimer)
 /* =========================
    SEQUENCE CONTROL
    ========================= */
-
-/**
- * @brief Starts a cleaning sequence.
- * 
- * @param mode Cleaning mode (FAST, SLOW, PURGE, MANUAL)
- */
 static void startCleaningSequence(MotorCmdType mode)
 {
+    if (mode < MOTOR_CMD_CLEAN_FAST || mode > MOTOR_CMD_CLEAN_MANUAL)
+        return;
+
     const CleanProfile* profile = GET_CLEAN_PROFILE(mode);
-    
-    // Initialize state
+
+    if (profile->cycles == 0)
+        return;
+
     cleanState.mode = mode;
     cleanState.cyclesLeft = profile->cycles;
     cleanState.isMotorOn = true;
-    
-    // Start immediately in ON phase
+
     Motor_setSpeed(profile->speed);
-    
-    // Schedule first OFF transition
+
     xTimerChangePeriod(motorCycleTimer, pdMS_TO_TICKS(profile->onTimeMs), 0);
     xTimerStart(motorCycleTimer, 0);
 }
 
-/**
- * @brief Starts a timed motor operation.
- * 
- * @param speed Motor speed (0-100%)
- * @param durationMs Duration in milliseconds
- */
 static void startTimedOperation(uint8_t speed, uint32_t durationMs)
 {
     Motor_setSpeed(speed);
-    
-    if (durationMs > 0) {
+
+    if(durationMs > 0)
+    {
         xTimerChangePeriod(motorTimeoutTimer, pdMS_TO_TICKS(durationMs), 0);
         xTimerStart(motorTimeoutTimer, 0);
     }
 }
 
-/**
- * @brief Starts PURGE cleaning mode.
- */
 static void startPurgeMode()
 {
     Motor_setSpeed(100);
+
     xTimerChangePeriod(motorTimeoutTimer, pdMS_TO_TICKS(PURGE_DURATION_MS), 0);
     xTimerStart(motorTimeoutTimer, 0);
 }
 
-/**
- * @brief Motor control task.
- * 
- * Processes commands from xMotorQueue and manages motor states.
- * 
- * @param pvParameters Unused
- */
+/* =========================
+   INIT
+   ========================= */
 void TaskMotor(void* pvParameters)
 {
     MotorCommand cmd;
-    
+
     for(;;)
     {
         if(xQueueReceive(xMotorQueue, &cmd, portMAX_DELAY) == pdTRUE)
         {
-            switch (cmd.type)
+            switch(cmd.type)
             {
                 case MOTOR_CMD_SET_SPEED:
                     Motor_setSpeed(cmd.speed);
@@ -259,9 +234,7 @@ void TaskMotor(void* pvParameters)
                 case MOTOR_CMD_CLEAN_PURGE:
                     startPurgeMode();
                     break;
-                default:
-                    //
-                    break;
+                default: break;
             }
         }
     }
@@ -273,11 +246,11 @@ void TaskMotor_init()
         .speed_mode      = LEDC_LOW_SPEED_MODE,
         .duty_resolution = LEDC_TIMER_10_BIT,
         .timer_num       = MOTOR_PWM_TIMER,
-        .freq_hz         = 20000,
+        .freq_hz         = 500,
         .clk_cfg         = LEDC_AUTO_CLK
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer_config));
-    
+
     ledc_channel_config_t channel_config = {
         .gpio_num   = MOTOR_PWM_PIN,
         .speed_mode = LEDC_LOW_SPEED_MODE,
@@ -288,32 +261,41 @@ void TaskMotor_init()
         .hpoint     = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&channel_config));
-    
+
     motorTimeoutTimer = xTimerCreate(
         "MotorTimeout",
-        pdMS_TO_TICKS(1000), 
-        pdFALSE,              
-        NULL,
+        pdMS_TO_TICKS(1000),
+        pdFALSE,
+        nullptr,
         motorTimeoutCallback
     );
     configASSERT(motorTimeoutTimer);
-    
+
     motorCycleTimer = xTimerCreate(
         "MotorCycle",
         pdMS_TO_TICKS(1000),
-        pdTRUE,              
-        NULL,
+        pdTRUE,
+        nullptr,
         motorCycleCallback
     );
     configASSERT(motorCycleTimer);
-    
+
+    kickstartTimer = xTimerCreate(
+        "Kickstart",
+        pdMS_TO_TICKS(KICKSTART_MS),
+        pdFALSE,
+        nullptr,
+        kickstartCallback
+    );
+    configASSERT(kickstartTimer);
+
     xTaskCreatePinnedToCore(
         TaskMotor,
         "TaskMotor",
         4096,
-        NULL,
-        1,           
-        NULL,
+        nullptr,
+        1,
+        nullptr,
         APP_CPU_NUM
     );
 }

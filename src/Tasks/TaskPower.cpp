@@ -65,8 +65,8 @@ void TaskPower_init()
 void Power_requestShutdown()
 {
     digitalWrite(pinLEDTFT, LOW);
-    Motor_setSpeed(0);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    sendMotorRequest(MOTOR_CMD_SET_SPEED, 0, 0);
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     esp_sleep_enable_ext0_wakeup((gpio_num_t)pinSW, 0);
     esp_deep_sleep_start();

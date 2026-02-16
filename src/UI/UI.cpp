@@ -33,10 +33,8 @@ void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon)
     iconSprite.pushSprite(x, y, TFT_BLACK);
 }
 
-static void UI_drawMenuItem(const char* title, const uint16_t* icon, int y, bool selected)
+static void UI_drawMenuItem(const char* title, const uint16_t* icon, int y, int sectionHeight, bool selected)
 {
-    const int sectionHeight = SCREEN_HEIGHT / MENU_COUNT;
-
     int iconY = y + (sectionHeight - ICON_HEIGHT) / 2;
     int textY = y + (sectionHeight - TEXT_HEIGHT) / 2;
 
@@ -52,29 +50,30 @@ static void UI_drawMenuItem(const char* title, const uint16_t* icon, int y, bool
     tft.print(title);
 }
 
-void UI_drawMenu(const char* const titles[], const uint16_t* const icons[])
+void UI_drawMenu(const char* const titles[], const uint16_t* const icons[], int items)
 {
-    const int sectionHeight = SCREEN_HEIGHT / MENU_COUNT;
+    const int sectionHeight = SCREEN_HEIGHT / items;
 
-    for(int i = 0; i < MENU_COUNT; i++)
-        UI_drawMenuItem(titles[i], icons[i], i * sectionHeight, false);
+    for(int i = 0; i < items; i++)
+        UI_drawMenuItem(titles[i], icons[i], i * sectionHeight, sectionHeight, false);
 }
 
-void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons, int last, int current)
+void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons, int last, int current, int items)
 {
-    const int sectionHeight = SCREEN_HEIGHT / MENU_COUNT;
+    const int sectionHeight = SCREEN_HEIGHT / items;
 
     if(last >= 0)
-        UI_drawMenuItem(titles[last], icons[last], last * sectionHeight, false);
+        UI_drawMenuItem(titles[last], icons[last], last * sectionHeight, sectionHeight, false);
 
     if(current >= 0)
-        UI_drawMenuItem(titles[current], icons[current], current * sectionHeight, true);
+        UI_drawMenuItem(titles[current], icons[current], current * sectionHeight, sectionHeight, true);
 }
 
 static void UI_drawHeader(const char* title, const uint16_t* icon)
 {
+    const int sectionHeight = SCREEN_HEIGHT / 3;
     tft.fillScreen(TFT_BLACK);
-    UI_drawMenuItem(title, icon, MENU_COUNT/MENU_COUNT, true);
+    UI_drawMenuItem(title, icon, 0, sectionHeight, true);
 }
 
 void UI_drawConfirmStatic(const char* title, const uint16_t* icon)
@@ -111,7 +110,7 @@ void UI_drawBootLogo()
 
     const int iconSize = 128;
     logoIconSprite.fillSprite(TFT_BLACK);
-    logoIconSprite.pushImage(0, 0, iconSize, iconSize, LogoIcon);
+    logoIconSprite.pushImage(0, 0, iconSize, iconSize, logoIcon);
     logoIconSprite.pushSprite(SCREEN_WIDTH/2 - iconSize/2, SCREEN_HEIGHT/2 - iconSize/2, TFT_BLACK);
 
     tft.setFreeFont(&FreeSerifBoldItalic9pt7b);
@@ -137,7 +136,7 @@ void UI_drawBootLogo()
 
 void UI_drawSpeedStatic()
 {
-    UI_drawHeader("VELOCIDAD", PercentageIcon);
+    UI_drawHeader("VELOCIDAD", percentageIcon);
 }
 
 void UI_updateSpeed(int speed)
@@ -164,7 +163,7 @@ static const char* timeLabels[] ={
 
 void UI_drawTimeSelectStatic()
 {
-    UI_drawHeader("TIMER", TimerIcon);
+    UI_drawHeader("TIMER", timerIcon);
 }
 
 void UI_updateTimeSelect(int index)

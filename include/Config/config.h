@@ -71,7 +71,7 @@ typedef enum
  */
 typedef enum
 {
-    BUZZER_CMD_CLICK,
+    BUZZER_CMD_INIT,
     BUZZER_CMD_CONFIRM,
     BUZZER_CMD_ERROR,
     BUZZER_CMD_CYCLE_FINISHED
@@ -182,5 +182,10 @@ typedef struct
  * before any task attempts queue communication.
  */
 void Config_init();
+
+void sendMotorRequest(MotorCmdType type, int speed, uint32_t duration);
+void sendPowerRequest(PowerCmdType type);
+void sendSettingsSave(SettingsCmdType type, int motorSpeed, uint8_t timeIndex);
+void sendBuzzerCommand(BuzzerCmdType type);
 
 #endif

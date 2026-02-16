@@ -65,6 +65,7 @@ extern const uint16_t* const settingsMenuIcons[MENU_COUNT];
     MENU_INIT,               /**< Initial state */
     MENU_MAIN,               /**< Main menu */   
 
+    MENU_MAIN_START_MOTOR,   /**< Motor Setup menu */ 
     MENU_MAIN_TIME_SELECT,   /**< Time selection submenu */
     MENU_MAIN_SPEED_CONTROL, /**< Speed control submenu */
 
