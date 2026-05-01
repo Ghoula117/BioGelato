@@ -2,15 +2,8 @@
  * @file TaskBuzzer.h
  * @brief PWM-based buzzer driver using ESP32 LEDC and FreeRTOS.
  *
- * This module control a passive buzzer using
- * the ESP32 LEDC PWM peripheral.
- *
- * Features:
- * - Hardware PWM tone generation
- * - Queue-driven command interface
- *
- * The module is designed for event-based acoustic feedback in
- * embedded systems.
+ * Commands posted to `xBuzzerQueue` are played in order; a melody in
+ * progress cannot be interrupted.
  */
 #ifndef TASKBUZZER_H
 #define TASKBUZZER_H
@@ -26,30 +19,22 @@
    HARDWARE CONFIGURATION
    ========================= */
 
-/**
- * @brief GPIO connected to the buzzer.
- */
-const int BUZZER_PIN = 47;
+/** @brief GPIO connected to the buzzer. */
+constexpr int BUZZER_PIN = 47;
 
-/**
- * @brief LEDC PWM channel used for tone generation.
- */
+/** @brief LEDC channel used for tone generation. */
 #define BUZZER_PWM_CHANNEL  LEDC_CHANNEL_1
 
-/**
- * @brief LEDC timer used for PWM generation.
- */
+/** @brief LEDC timer used for PWM generation. */
 #define BUZZER_PWM_TIMER    LEDC_TIMER_1
 
-/**
- * @brief PWM resolution in bits.
- *
- * 10-bit resolution provides duty values from 0 to 1023.
- */
+/** @brief 10-bit PWM resolution (duty range 0–1023). */
 #define BUZZER_RESOLUTION   LEDC_TIMER_10_BIT
 
 /**
- * @brief Default duty cycle for tone generation.
+ * @brief Duty cycle for tone output (≈ 10 %).
+ *
+ * Below 50 % to keep volume non-intrusive; passive buzzers are loudest at 50 %.
  */
 #define BUZZER_DUTY_CYCLE   102
 
@@ -58,10 +43,10 @@ const int BUZZER_PIN = 47;
    MUSICAL NOTES (Hz)
    ========================= */
 
-/**
- * @brief Musical note definitions (frequency in Hz).
- */
+/** @brief Silent pause marker. Stops the channel for the note duration. */
 #define NOTE_SILENT 0
+
+/** @brief Musical note frequencies (Hz), C5 through G6. */
 #define NOTE_C5   523
 #define NOTE_D5   587
 #define NOTE_E5   659
@@ -70,7 +55,6 @@ const int BUZZER_PIN = 47;
 #define NOTE_A5   880
 #define NOTE_B5   988
 #define NOTE_C6   1047
-#define NOTE_E6   1319
 #define NOTE_D6   1175
 #define NOTE_E6   1319
 #define NOTE_F6   1397
@@ -81,31 +65,23 @@ const int BUZZER_PIN = 47;
    DATA STRUCTURES
    ========================= */
 
-/**
- * @brief Represents a single musical note.
- */
+/** @brief A single musical note. */
 struct Note {
-    uint16_t frequency;  /**< Tone frequency in Hz. */
+    uint16_t frequency;  /**< Frequency in Hz; 0 for a silent pause. */
     uint16_t duration;   /**< Duration in milliseconds. */
 };
 
-/**
- * @brief Represents a melody sequence.
- *
- * A melody consists of an ordered array of notes.
- */
+/** @brief An ordered sequence of notes. */
 struct Melody {
-    const Note* notes;   /**< Pointer to an array of Note structures. */
-    uint8_t length;      /**< Number of notes in the sequence. */
+    const Note* notes;   /**< Note array. */
+    uint8_t     length;  /**< Number of notes. */
 };
 
 /* =========================
    PREDEFINED MELODIES
    ========================= */
 
-/**
- * @brief System initialization melody.
- */
+/** @brief System initialization melody. */
 static const Note MELODY_INIT[] = {
     {NOTE_C5, 120},
     {NOTE_E5, 120},
@@ -123,18 +99,14 @@ static const Note MELODY_INIT[] = {
     {NOTE_E6, 350}
 };
 
-/**
- * @brief Confirmation melody.
- */
+/** @brief Confirmation melody. */
 static const Note MELODY_CONFIRM[] = {
     {NOTE_E5, 100},
     {NOTE_SILENT, 50},
     {NOTE_G5, 100}
 };
 
-/**
- * @brief Error indication melody.
- */
+/** @brief Error melody. */
 static const Note MELODY_ERROR[] = {
     {NOTE_C5, 80},
     {NOTE_SILENT, 40},
@@ -143,9 +115,7 @@ static const Note MELODY_ERROR[] = {
     {NOTE_C5, 80}
 };
 
-/**
- * @brief Cycle completion melody.
- */
+/** @brief Cycle completion melody. */
 static const Note MELODY_CYCLE_FINISHED[] = {
 
     {NOTE_C5, 300},
@@ -190,14 +160,15 @@ static const Note MELODY_CYCLE_FINISHED[] = {
     {NOTE_C6, 900}
 };
 
-
 /**
- * @brief Lookup table mapping command index to melody.
+ * @brief Lookup table indexed directly by `BuzzerCmdType` value.
+ *
+ * Must stay in sync with the `BuzzerCmdType` enum order in config.h.
  */
 static const Melody MELODIES[] = {
-    {MELODY_INIT, sizeof(MELODY_INIT) / sizeof(Note)},
-    {MELODY_CONFIRM, sizeof(MELODY_CONFIRM) / sizeof(Note)},
-    {MELODY_ERROR, sizeof(MELODY_ERROR) / sizeof(Note)},
+    {MELODY_INIT,           sizeof(MELODY_INIT)           / sizeof(Note)},
+    {MELODY_CONFIRM,        sizeof(MELODY_CONFIRM)        / sizeof(Note)},
+    {MELODY_ERROR,          sizeof(MELODY_ERROR)          / sizeof(Note)},
     {MELODY_CYCLE_FINISHED, sizeof(MELODY_CYCLE_FINISHED) / sizeof(Note)}
 };
 
@@ -207,41 +178,45 @@ static const Melody MELODIES[] = {
    ========================= */
 
 /**
- * @brief Initializes the buzzer module.
+ * @brief Initializes LEDC hardware and creates the playback task.
  *
- * Configures the LEDC timer and channel and creates the
- * FreeRTOS task responsible for melody playback.
- *
- * Must be called once during system initialization.
+ * Must be called once during system init, after `Config_init()`.
  */
 void TaskBuzzer_init();
 
 /**
- * @brief FreeRTOS task responsible for processing buzzer commands.
+ * @brief FreeRTOS task that serialises melody playback.
+ *
+ * Blocks on `xBuzzerQueue`. Plays each melody to completion before
+ * accepting the next command.
  *
  * @param pvParameters Unused.
  */
 void TaskBuzzer(void *pvParameters);
 
 /**
- * @brief Plays a tone at a specific frequency.
+ * @brief Produces a single tone at the given frequency.
  *
- * @param frequency Frequency in Hertz.
+ * If `frequency` is `NOTE_SILENT`, calls `Buzzer_stop()` instead.
+ *
+ * @param frequency Frequency in Hz, or `NOTE_SILENT` for silence.
  */
 void Buzzer_playTone(uint16_t frequency);
 
 /**
- * @brief Stops the buzzer output.
+ * @brief Stops buzzer output.
  *
- * Disables PWM duty cycle, forcing silence.
+ * Uses `ledc_stop()` to drive the GPIO to its idle level (low).
  */
 void Buzzer_stop();
 
 /**
- * @brief Plays a complete melody sequence.
+ * @brief Plays a melody sequence, blocking until complete.
  *
- * @param melody Pointer to a Melody structure containing
- *               the note sequence to be played.
+ * Blocks the calling task for the full melody duration. Must only be
+ * called from within `TaskBuzzer`.
+ *
+ * @param melody Pointer to the melody to play.
  */
 void Buzzer_playMelody(const Melody* melody);
 

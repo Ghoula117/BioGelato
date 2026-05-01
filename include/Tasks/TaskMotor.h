@@ -1,12 +1,10 @@
 /**
  * @file TaskMotor.h
- * @brief Motor control task with PWM driver.
+ * @brief Motor control task — public interface.
  *
- * This module implements:
- * - PWM-based speed control (0-100%)
- * - Timed motor operations
+ * All motor control must go through `xMotorQueue`. No code outside this
+ * module may call LEDC functions or motor timers directly.
  */
-
 #ifndef TASKMOTOR_H
 #define TASKMOTOR_H
 
@@ -22,59 +20,43 @@
    HARDWARE CONFIGURATION
    ========================= */
 
-const int MOTOR_PWM_PIN =   21;
+/** @brief GPIO connected to the motor PWM input. */
+constexpr int MOTOR_PWM_PIN = 21;
+
+/** @brief LEDC channel used for motor PWM output. */
 #define MOTOR_PWM_CHANNEL  LEDC_CHANNEL_0
+
+/** @brief LEDC timer used for motor PWM. */
 #define MOTOR_PWM_TIMER    LEDC_TIMER_0
 
+/** @brief Maximum LEDC duty value at 10-bit resolution (2^10 - 1 = 1023). */
 #define MAX_DUTY            ((1UL << LEDC_TIMER_10_BIT) - 1)
+
+/**
+ * @brief Kickstart phase duration in milliseconds.
+ *
+ * Duration of the 70 % boost applied at motor start to overcome static
+ * friction. Increase if the motor stalls on a cold start.
+ */
 static constexpr uint32_t KICKSTART_MS = 350;
 
-
 /**
- * @brief Cleaning sequence configuration profile.
- */
-struct CleanProfile
-{
-    uint32_t onTimeMs;   ///< Motor ON duration (ms)
-    uint32_t offTimeMs;  ///< Motor OFF duration (ms)
-    uint8_t  speed;      ///< Motor speed (0-100%)
-    uint8_t  cycles;     ///< Number of ON/OFF cycles
-};
-
-/**
- * @brief Cleaning profiles index.
- * 
- * - Index 0 = MOTOR_CMD_CLEAN_FAST
- * - Index 1 = MOTOR_CMD_CLEAN_SLOW
- * - Index 2 = MOTOR_CMD_CLEAN_MANUAL
- */
-static const CleanProfile cleanProfiles[] = {
-    { 5000,  1000, 100, 10 },  // MOTOR_CMD_CLEAN_FAST
-    { 20000, 2000, 60,  10 },  // MOTOR_CMD_CLEAN_SLOW
-    { 2000,  500,  100, 15 },  // MOTOR_CMD_CLEAN_MANUAL
-};
-
-/**
- * @brief Initializes motor PWM, timers, and control task.
+ * @brief Initializes motor PWM peripheral, software timers, and control task.
  *
- * Must be called once during system startup.
+ * Must be called once during system startup, after `Config_init()`.
  */
 void TaskMotor_init();
 
 /**
  * @brief Motor control task.
  *
- * Processes motor commands from the queue.
+ * Drains `xMotorQueue` and dispatches each command to the appropriate
+ * handler. Supported commands: MOTOR_CMD_SET_SPEED, MOTOR_CMD_START_TIMED,
+ * MOTOR_CMD_STOP, MOTOR_CMD_CLEAN_FAST, MOTOR_CMD_CLEAN_SLOW,
+ * MOTOR_CMD_CLEAN_MANUAL, MOTOR_CMD_CLEAN_PURGE.
  *
- * @param pvParameters Unused
+ * @param pvParameters Unused.
  */
 void TaskMotor(void *pvParameters);
-
-/**
- * @brief Sets motor PWM duty cycle.
- *
- * @param percent Speed (0-100%). Values outside range are clamped.
- */
-void Motor_setSpeed(int percent);
 
 #endif // TASKMOTOR_H

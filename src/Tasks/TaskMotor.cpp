@@ -1,71 +1,179 @@
 /**
  * @file TaskMotor.cpp
  * @brief Motor control task implementation.
+ *
+ * Implements two independent operating modes:
+ * - **Drip mode** (`MOTOR_CMD_START_TIMED`): short high-amplitude PWM bursts
+ *   timed by a dedicated FreeRTOS timer. Speed 1–100 maps hyperbolically to
+ *   a burst period of 10 000–222 ms, covering the functional drip range of
+ *   the physical hardware (0–45 % internal duty).
+ * - **Cleaning mode** (`MOTOR_CMD_CLEAN_*`): continuous high-speed PWM driven
+ *   by cycling ON/OFF according to a `CleanProfile`.
  */
 
 #include "Tasks/TaskMotor.h"
 
-/* =========================
-   CONSTANTS
-   ========================= */
+/** @brief Duration of a full purge cycle in milliseconds. */
+static constexpr uint32_t PURGE_DURATION_MS = 20000;
 
-static constexpr uint32_t PURGE_DURATION_MS = 60000;
+/** @brief Default burst amplitude for drip mode. */
+static constexpr uint8_t DRIP_PULSE_DUTY_DEFAULT = 70;
 
-/* =========================
-   PRIVATE STATE
-   ========================= */
+/**
+ * @brief Default burst duration in milliseconds for drip mode.
+ *
+ * Determines how long the motor runs per pulse and therefore the fluid volume
+ * per drop.
+ */
+static constexpr uint32_t DRIP_PULSE_MS_DEFAULT = 10;
+
+/**
+ * @brief One-shot timer that fires after KICKSTART_MS to drop PWM to the
+ *        target duty, ending the kickstart phase.
+ */
 static TimerHandle_t kickstartTimer = nullptr;
+
+/** @brief Target LEDC duty to apply when the kickstart timer fires. */
 static uint32_t kickstartTargetDuty = 0;
+
+/** @brief Tracks whether the motor is currently spinning. */
 static bool motorRunning = false;
 
-// Timers
+/** @brief One-shot timer that stops the motor after a timed operation ends. */
 static TimerHandle_t motorTimeoutTimer = nullptr;
-static TimerHandle_t motorCycleTimer   = nullptr;
 
-/* =========================
-   CLEAN STATE
-   ========================= */
+/** @brief Periodic timer that drives ON/OFF cycles during cleaning sequences. */
+static TimerHandle_t motorCycleTimer = nullptr;
 
+/** @brief Periodic timer that alternates burst ON/OFF phases in drip mode. */
+static TimerHandle_t dripTimer = nullptr;
+
+/** @brief Cleaning sequence configuration profile. */
+struct CleanProfile
+{
+    uint32_t onTimeMs;   ///< Motor ON duration (ms)
+    uint32_t offTimeMs;  ///< Motor OFF duration (ms)
+    uint8_t  speed;      ///< Motor speed (0-100%)
+    uint8_t  cycles;     ///< Number of ON/OFF cycles
+};
+
+/**
+ * @brief Cleaning profiles indexed by (mode - MOTOR_CMD_CLEAN_FAST).
+ *
+ * [0] CLEAN_FAST · [1] CLEAN_SLOW · [2] CLEAN_MANUAL.
+ * Must stay in sync with the MotorCmdType enum order in config.h.
+ */
+static const CleanProfile cleanProfiles[] = {
+    { 5000,  1000, 100, 10 },  // MOTOR_CMD_CLEAN_FAST
+    { 20000, 2000, 60,  10 },  // MOTOR_CMD_CLEAN_SLOW
+    { 2000,  500,  100, 15 },  // MOTOR_CMD_CLEAN_MANUAL
+};
+
+/** @brief Maps a clean command type to its CleanProfile entry. */
 #define GET_CLEAN_PROFILE(mode) (&cleanProfiles[(mode) - MOTOR_CMD_CLEAN_FAST])
 
+/** @brief Runtime state for an active cleaning sequence. */
 struct CleanState {
-    MotorCmdType mode;
-    uint8_t      cyclesLeft;
-    bool         isMotorOn;
+    MotorCmdType mode;       ///< Active cleaning command; MOTOR_CMD_STOP when idle.
+    uint8_t      cyclesLeft; ///< Remaining ON/OFF cycles before completion.
+    bool         isMotorOn;  ///< Whether the motor is currently in its ON phase.
 };
 
 static CleanState cleanState = {
-    .mode = MOTOR_CMD_STOP,
+    .mode       = MOTOR_CMD_STOP,
     .cyclesLeft = 0,
-    .isMotorOn = false
+    .isMotorOn  = false
 };
 
-/* =========================
-   HELPERS
-   ========================= */
+/**
+ * @brief Runtime state for an active drip operation.
+ *
+ * The drip timer alternates between two phases:
+ *  - ON  (`motorPhase == true`):  motor runs for `pulseMs` milliseconds.
+ *  - OFF (`motorPhase == false`): motor is idle for `periodMs - pulseMs` ms.
+ */
+struct DripState {
+    bool     active;           ///< True while a drip operation is running.
+    uint32_t periodMs;         ///< Full ON+OFF cycle duration in milliseconds.
+    uint32_t pulseMs;          ///< Motor ON duration per cycle (burst width).
+    uint8_t  pulseDutyPercent; ///< Burst amplitude as a linear duty percentage.
+    bool     motorPhase;       ///< True during the ON phase, false during OFF.
+};
+
+static DripState dripState = {
+    .active           = false,
+    .periodMs         = 0,
+    .pulseMs          = 0,
+    .pulseDutyPercent = 0,
+    .motorPhase       = false
+};
+
+/**
+ * @brief Maps a speed percentage to an LEDC duty value using a quadratic curve.
+ *
+ * The mapping is non-linear to compensate for the motor's dead zone below
+ * approximately 17–18 % hardware duty. At percent = 0 the result is always 0.
+ * For any non-zero input the output is at least `minDuty × MAX_DUTY`, ensuring
+ * the motor receives enough drive to keep spinning once started.
+ *
+ * Formula: `y = minDuty + (1 - minDuty) × x²`, where `x = percent / 100`.
+ *
+ * @param percent Speed in the range 0–100 %.
+ * @return LEDC duty value in the range 0–MAX_DUTY.
+ */
 static uint32_t speedToDuty(uint8_t percent)
 {
+    if (percent == 0)
+        return 0;
+
+    const float minDuty = 0.20f;
+
     float x = percent / 100.0f;
-    float y = x * x;             
+    float y = minDuty + (1.0f - minDuty) * x * x;
 
-    float mapped = 0.4f + 0.4f * y;  // 0.6 → 1.0
-
-    return (uint32_t)(mapped * MAX_DUTY);
+    return (uint32_t)(y * MAX_DUTY);
 }
 
-/* =========================
-   KICKSTART CALLBACK
-   ========================= */
+/**
+ * @brief Writes a linear duty value directly to the LEDC hardware.
+ *
+ * @param percent Duty as a linear percentage (0–100). Values are scaled
+ *                directly: `duty = percent × MAX_DUTY / 100`.
+ */
+static void Drip_applyPulse(uint8_t percent)
+{
+    uint32_t duty = (percent == 0) ? 0 : (uint32_t)(percent * MAX_DUTY / 100UL);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+}
+
+/**
+ * @brief Timer callback that ends the kickstart phase.
+ *
+ * Fires KICKSTART_MS after Motor_setSpeed() applies the 70 % kickstart duty.
+ * Drops the LEDC output to the actual target duty stored in kickstartTargetDuty.
+ */
 static void kickstartCallback(TimerHandle_t)
 {
+    if (!motorRunning) return;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, kickstartTargetDuty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
 }
 
-/* =========================
-   MOTOR CONTROL
-   ========================= */
-void Motor_setSpeed(int percent)
+/**
+ * @brief Sets the motor speed using continuous PWM.
+ *
+ * When starting from rest with a target duty below 50 % of MAX_DUTY, a
+ * kickstart pulse at 70 % duty is applied first for KICKSTART_MS milliseconds
+ * to overcome static friction. The `kickstartTimer` callback then drops the
+ * output to the true target.
+ *
+ * Calling with percent ≤ 0 stops the motor immediately, cancels any pending
+ * kickstart, and resets `motorRunning`.
+ *
+ * @param percent Target speed in the range 0–100 %. Clamped internally.
+ */
+static void Motor_setSpeed(int percent)
 {
     if (percent <= 0)
     {
@@ -88,11 +196,19 @@ void Motor_setSpeed(int percent)
     {
         motorRunning = true;
 
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, MAX_DUTY);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+        if (kickstartTargetDuty < (MAX_DUTY / 2))
+        {
+            ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, (uint32_t)(0.7f * MAX_DUTY));
+            ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
 
-        xTimerStop(kickstartTimer, 0);
-        xTimerStart(kickstartTimer, 0);
+            xTimerStop(kickstartTimer, 0);
+            xTimerStart(kickstartTimer, 0);
+        }
+        else
+        {
+            ledc_set_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL, kickstartTargetDuty);
+            ledc_update_duty(LEDC_LOW_SPEED_MODE, MOTOR_PWM_CHANNEL);
+        }
     }
     else
     {
@@ -101,21 +217,100 @@ void Motor_setSpeed(int percent)
     }
 }
 
+/**
+ * @brief Timer callback that alternates the motor between burst ON and OFF phases.
+ *
+ * Each invocation toggles `dripState.motorPhase`:
+ *  - ON → OFF: stops the motor, schedules the OFF interval
+ *              (`periodMs - pulseMs`, minimum 10 ms).
+ *  - OFF → ON: applies the burst pulse, schedules `pulseMs`.
+ */
+static void dripTimerCallback(TimerHandle_t)
+{
+    if (!dripState.active) return;
+
+    if (dripState.motorPhase)
+    {
+        Drip_applyPulse(0);
+        dripState.motorPhase = false;
+
+        uint32_t offTimeMs = (dripState.periodMs > dripState.pulseMs) ? (dripState.periodMs - dripState.pulseMs) : 10;
+
+        xTimerChangePeriod(dripTimer, pdMS_TO_TICKS(offTimeMs), 0);
+    }
+    else
+    {
+        Drip_applyPulse(dripState.pulseDutyPercent);
+        dripState.motorPhase = true;
+
+        xTimerChangePeriod(dripTimer, pdMS_TO_TICKS(dripState.pulseMs), 0);
+    }
+}
+
+/**
+ * @brief Starts the drip burst generator.
+ *
+ * Applies the first pulse immediately, then hands control to `dripTimer`
+ * which alternates ON/OFF phases until stopDripMode() is called.
+ *
+ * @param periodMs         Full ON+OFF cycle duration in milliseconds.
+ * @param pulseDutyPercent Burst amplitude as a linear duty percentage (0–100).
+ * @param pulseMs          Burst ON duration in milliseconds.
+ */
+static void startDripMode(uint32_t periodMs, uint8_t  pulseDutyPercent = DRIP_PULSE_DUTY_DEFAULT, uint32_t pulseMs = DRIP_PULSE_MS_DEFAULT)
+{
+    if (periodMs < 50) periodMs = 50;
+
+    dripState.active           = true;
+    dripState.periodMs         = periodMs;
+    dripState.pulseDutyPercent = pulseDutyPercent;
+    dripState.pulseMs          = pulseMs;
+    dripState.motorPhase       = true;
+
+    Drip_applyPulse(pulseDutyPercent);
+
+    xTimerChangePeriod(dripTimer, pdMS_TO_TICKS(pulseMs), 0);
+}
+
+/**
+ * @brief Stops the drip burst generator and ensures the motor output is zero.
+ */
+static void stopDripMode()
+{
+    if (dripState.active)
+    {
+        dripState.active = false;
+        xTimerStop(dripTimer, 0);
+        Drip_applyPulse(0);
+    }
+}
+
 /* =========================
    STOP & NOTIFY
    ========================= */
+
+/**
+ * @brief Stops all motor operations and resets all associated state.
+ *
+ * Cancels `motorTimeoutTimer`, `motorCycleTimer`, and the drip generator,
+ * then stops the motor and clears the cleaning sequence state.
+ */
 static void stopAllMotorOperations()
 {
-    Motor_setSpeed(0);
+    stopDripMode();
 
     xTimerStop(motorTimeoutTimer, 0);
     xTimerStop(motorCycleTimer, 0);
+    Motor_setSpeed(0);
 
-    cleanState.mode = MOTOR_CMD_STOP;
+    cleanState.mode       = MOTOR_CMD_STOP;
     cleanState.cyclesLeft = 0;
-    cleanState.isMotorOn = false;
+    cleanState.isMotorOn  = false;
 }
 
+/**
+ * @brief Signals cycle completion to the buzzer task.
+ */
 static void notifyCompletion()
 {
     sendBuzzerCommand(BUZZER_CMD_CYCLE_FINISHED);
@@ -124,28 +319,40 @@ static void notifyCompletion()
 /* =========================
    TIMER CALLBACKS
    ========================= */
+
+/**
+ * @brief Fires when a timed motor operation reaches its duration limit.
+ *
+ * Stops all motor operations and notifies completion via the buzzer.
+ */
 static void motorTimeoutCallback(TimerHandle_t)
 {
     stopAllMotorOperations();
     notifyCompletion();
 }
 
+/**
+ * @brief Drives the ON/OFF cycling of a cleaning sequence.
+ *
+ * Alternates the motor between its ON and OFF phases according to the active
+ * CleanProfile.
+ */
 static void motorCycleCallback(TimerHandle_t)
 {
-    if(cleanState.mode < MOTOR_CMD_CLEAN_FAST || cleanState.mode > MOTOR_CMD_CLEAN_MANUAL)
+    if (cleanState.mode < MOTOR_CMD_CLEAN_FAST || cleanState.mode > MOTOR_CMD_CLEAN_MANUAL)
         return;
 
     const CleanProfile* profile = GET_CLEAN_PROFILE(cleanState.mode);
 
-    if(cleanState.isMotorOn)
+    if (cleanState.isMotorOn)
     {
         Motor_setSpeed(0);
         cleanState.isMotorOn = false;
 
-        if(cleanState.cyclesLeft > 0)
+        if (cleanState.cyclesLeft > 0)
             cleanState.cyclesLeft--;
 
-        if(cleanState.cyclesLeft == 0)
+        if (cleanState.cyclesLeft == 0)
         {
             xTimerStop(motorCycleTimer, 0);
             cleanState.mode = MOTOR_CMD_STOP;
@@ -165,6 +372,17 @@ static void motorCycleCallback(TimerHandle_t)
 /* =========================
    SEQUENCE CONTROL
    ========================= */
+
+/**
+ * @brief Starts a cleaning sequence for the given mode.
+ *
+ * Looks up the CleanProfile for `mode`, stops any active drip operation,
+ * and begins the first ON phase. `motorCycleTimer` then drives subsequent
+ * ON/OFF transitions until all cycles complete.
+ *
+ * @param mode One of MOTOR_CMD_CLEAN_FAST, MOTOR_CMD_CLEAN_SLOW, or
+ *             MOTOR_CMD_CLEAN_MANUAL.
+ */
 static void startCleaningSequence(MotorCmdType mode)
 {
     if (mode < MOTOR_CMD_CLEAN_FAST || mode > MOTOR_CMD_CLEAN_MANUAL)
@@ -175,66 +393,93 @@ static void startCleaningSequence(MotorCmdType mode)
     if (profile->cycles == 0)
         return;
 
-    cleanState.mode = mode;
+    stopDripMode();
+
+    cleanState.mode       = mode;
     cleanState.cyclesLeft = profile->cycles;
-    cleanState.isMotorOn = true;
+    cleanState.isMotorOn  = true;
 
     Motor_setSpeed(profile->speed);
 
     xTimerChangePeriod(motorCycleTimer, pdMS_TO_TICKS(profile->onTimeMs), 0);
-    xTimerStart(motorCycleTimer, 0);
 }
 
+/**
+ * @brief Starts a drip operation for a given speed and duration.
+ *
+ * Maps `speed` (1–100 %) to the functional hardware range (1–45 %)
+ * then converts to a burst period
+ *
+ * If `durationMs` is non-zero the operation is automatically stopped by
+ * `motorTimeoutTimer` after that interval.
+ *
+ * @param speed      Requested speed (0–100 %). 0 stops the motor.
+ * @param durationMs Run duration in milliseconds. 0 means indefinite.
+ */
 static void startTimedOperation(uint8_t speed, uint32_t durationMs)
 {
-    Motor_setSpeed(speed);
+    stopDripMode();
 
-    if(durationMs > 0)
+    if (speed > 0)
+    {
+        uint8_t  mapped   = (uint8_t)((speed * 45UL + 99UL) / 100UL);
+        uint32_t periodMs = 10000UL / mapped;
+        startDripMode(periodMs);
+    }
+
+    if (durationMs > 0)
     {
         xTimerChangePeriod(motorTimeoutTimer, pdMS_TO_TICKS(durationMs), 0);
-        xTimerStart(motorTimeoutTimer, 0);
     }
 }
 
+/**
+ * @brief Runs the motor at full speed for PURGE_DURATION_MS milliseconds.
+*/
 static void startPurgeMode()
 {
+    stopDripMode();
+
     Motor_setSpeed(100);
 
     xTimerChangePeriod(motorTimeoutTimer, pdMS_TO_TICKS(PURGE_DURATION_MS), 0);
-    xTimerStart(motorTimeoutTimer, 0);
 }
 
-/* =========================
-   INIT
-   ========================= */
 void TaskMotor(void* pvParameters)
 {
     MotorCommand cmd;
 
-    for(;;)
+    for (;;)
     {
-        if(xQueueReceive(xMotorQueue, &cmd, portMAX_DELAY) == pdTRUE)
+        if (xQueueReceive(xMotorQueue, &cmd, portMAX_DELAY) == pdTRUE)
         {
-            switch(cmd.type)
+            switch (cmd.type)
             {
                 case MOTOR_CMD_SET_SPEED:
+                    stopDripMode();
                     Motor_setSpeed(cmd.speed);
                     break;
+
                 case MOTOR_CMD_START_TIMED:
                     startTimedOperation(cmd.speed, cmd.duration);
                     break;
+
                 case MOTOR_CMD_STOP:
                     stopAllMotorOperations();
                     break;
+
                 case MOTOR_CMD_CLEAN_FAST:
                 case MOTOR_CMD_CLEAN_SLOW:
                 case MOTOR_CMD_CLEAN_MANUAL:
                     startCleaningSequence(cmd.type);
                     break;
+
                 case MOTOR_CMD_CLEAN_PURGE:
                     startPurgeMode();
                     break;
-                default: break;
+
+                default:
+                    break;
             }
         }
     }
@@ -246,7 +491,7 @@ void TaskMotor_init()
         .speed_mode      = LEDC_LOW_SPEED_MODE,
         .duty_resolution = LEDC_TIMER_10_BIT,
         .timer_num       = MOTOR_PWM_TIMER,
-        .freq_hz         = 500,
+        .freq_hz         = 1000,
         .clk_cfg         = LEDC_AUTO_CLK
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer_config));
@@ -289,7 +534,16 @@ void TaskMotor_init()
     );
     configASSERT(kickstartTimer);
 
-    xTaskCreatePinnedToCore(
+    dripTimer = xTimerCreate(
+        "DripTimer",
+        pdMS_TO_TICKS(100),
+        pdTRUE,
+        nullptr,
+        dripTimerCallback
+    );
+    configASSERT(dripTimer);
+
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(
         TaskMotor,
         "TaskMotor",
         4096,
@@ -298,4 +552,5 @@ void TaskMotor_init()
         nullptr,
         APP_CPU_NUM
     );
+    configASSERT(taskCreated == pdPASS);
 }

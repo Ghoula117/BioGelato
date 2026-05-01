@@ -1,5 +1,5 @@
 /**
- * @file Config.h
+ * @file config.h
  * @brief Global system configuration and inter-task communication definitions.
  *
  * This module centralizes:
@@ -65,16 +65,15 @@ typedef enum
    ========================= */
 
 /**
- * @brief Buzzer event types.
- *
- * Used by UI for feedback interactions
+ * @brief Buzzer command types. Order must match `MELODIES[]` in TaskBuzzer.h.
  */
 typedef enum
 {
-    BUZZER_CMD_INIT,
-    BUZZER_CMD_CONFIRM,
-    BUZZER_CMD_ERROR,
-    BUZZER_CMD_CYCLE_FINISHED
+    BUZZER_CMD_INIT,           /**< System startup melody */
+    BUZZER_CMD_CONFIRM,        /**< User confirmation feedback */
+    BUZZER_CMD_ERROR,          /**< Error indication */
+    BUZZER_CMD_CYCLE_FINISHED, /**< Cycle completion notification */
+    BUZZER_CMD_COUNT           /**< Sentinel — number of valid commands */
 }BuzzerCmdType;
 
 /**
@@ -84,7 +83,7 @@ typedef enum
  */
 typedef struct
 {
-    BuzzerCmdType type;
+    BuzzerCmdType type; /**< Melody to play */
 }BuzzerCommand;
 
 /* =========================
@@ -101,8 +100,8 @@ typedef enum
     MOTOR_CMD_STOP,          /**< Stop motor immediately */
     MOTOR_CMD_CLEAN_FAST,    /**< Execute fast cleaning routine */
     MOTOR_CMD_CLEAN_SLOW,    /**< Execute slow cleaning routine */
-    MOTOR_CMD_CLEAN_PURGE,   /**< Execute purge cleaning routine */
     MOTOR_CMD_CLEAN_MANUAL,  /**< Execute manual cleaning routine */
+    MOTOR_CMD_CLEAN_PURGE,   /**< Execute purge cleaning routine */
 }MotorCmdType;
 
 /**
@@ -127,7 +126,6 @@ typedef struct
 typedef enum
 {
     POWER_CMD_SHUTDOWN, /**< Enter deep sleep */
-    POWER_CMD_REBOOT    /**< Software reset */
 }PowerCmdType;
 
 /**
@@ -183,9 +181,40 @@ typedef struct
  */
 void Config_init();
 
+/**
+ * @brief Posts a motor command to `xMotorQueue`.
+ *
+ * @param type     Command type.
+ * @param speed    Speed percentage (0–100); ignored for non-speed commands.
+ * @param duration Run duration in ms; 0 means no timeout.
+ */
 void sendMotorRequest(MotorCmdType type, int speed, uint32_t duration);
+
+/**
+ * @brief Posts a power command to `xPowerQueue`.
+ *
+ * @param type Command type.
+ */
 void sendPowerRequest(PowerCmdType type);
+
+/**
+ * @brief Posts a settings command to `xSettingsQueue`.
+ *
+ * For `SETTINGS_CMD_SAVE`, `motorSpeed` and `timeIndex` are stored to flash.
+ * For `SETTINGS_CMD_LOAD`, those parameters are ignored — TaskSaveData reads
+ * from flash directly.
+ *
+ * @param type       Command type.
+ * @param motorSpeed Speed value to save (0–100).
+ * @param timeIndex  Time option index to save.
+ */
 void sendSettingsSave(SettingsCmdType type, int motorSpeed, uint8_t timeIndex);
+
+/**
+ * @brief Posts a buzzer command to `xBuzzerQueue`.
+ *
+ * @param type Command type.
+ */
 void sendBuzzerCommand(BuzzerCmdType type);
 
 #endif

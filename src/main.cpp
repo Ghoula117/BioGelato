@@ -8,6 +8,7 @@
 #include "Tasks/TaskBuzzer.h"
 #include "esp_sleep.h"
 
+
 void setup()
 {
     Config_init();
@@ -18,8 +19,12 @@ void setup()
     TaskUI_init();
     TaskMotor_init();
     TaskBuzzer_init();
-
     if(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) UI_setState(MENU_INIT);
+
+    SettingsCommand cmd;
+    cmd.type = SETTINGS_CMD_LOAD;
+    xQueueSend(xSettingsQueue, &cmd, 0);
+
 }
 
 void loop()
