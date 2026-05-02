@@ -13,48 +13,8 @@
 #include "Config/config.h"
 #include "images/icons.h"
 
-static const uint32_t timeOptions[] = {
-    15 * 60 * 1000,
-    30 * 60 * 1000,
-    45 * 60 * 1000,
-    60 * 60 * 1000,
-    0
-};
-
-static const MotorCmdType cleanCmdMap[] =
-{
-    MOTOR_CMD_CLEAN_FAST,
-    MOTOR_CMD_CLEAN_SLOW,
-    MOTOR_CMD_CLEAN_PURGE,
-    MOTOR_CMD_CLEAN_MANUAL
-};
-
-constexpr uint32_t FAST_THRESHOLD_MS = 80;
-constexpr uint32_t RESET_THRESHOLD_MS = 300;
-constexpr uint8_t MAX_STEP = 10;
-constexpr uint8_t STEP_INCREMENT = 2;
-
-#define CLEAN_OPTION_COUNT (sizeof(cleanCmdMap)/sizeof(cleanCmdMap[0]))
-#define TIME_OPTION_COUNT (sizeof(timeOptions)/sizeof(timeOptions[0]))
-#define TIME_DEFAULT_INDEX (TIME_OPTION_COUNT - 1)
-
-/**
- * @brief Titles and icons for the main menu entries.
- */
-extern const char* const mainMenuTitles[MENU_COUNT];
-extern const uint16_t* const mainMenuIcons[MENU_COUNT];
-
-/**
- * @brief Titles and icons for the review submenu entries.
- */
-extern const char* const systemMenuTitles[MENU_COUNT];
-extern const uint16_t* const systemMenuIcons[MENU_COUNT];
-
-/**
- * @brief Titles and icons for the settings submenu entries.
- */
-extern const char* const settingsMenuTitles[MENU_COUNT];
-extern const uint16_t* const settingsMenuIcons[MENU_COUNT];
+static constexpr uint8_t TIME_OPTION_COUNT  = 5;
+static constexpr uint8_t TIME_DEFAULT_INDEX = TIME_OPTION_COUNT - 1;
 
 /**
  * @enum UIState
@@ -89,28 +49,11 @@ struct UIStateTable {
     void (*onExit)(void);
 };
 
-/**
- * @brief Sets the current UI state.
- *
- * @param newState The new state to switch to.
- */
 void UI_setState(UIState newState);
-
-/**
- * @brief Processes an encoder event in the current UI state.
- *
- * @param evt Encoder event to process.
- */
 void UI_processEvent(EncoderEvent evt);
 
-/**
- * @brief Compile-time consistency checks.
- */
-static_assert(MENU_COUNT == 3); /**< MENU_COUNT must be 3 to match mainMenu arrays. */
+static_assert(MENU_COUNT == 3, "MENU_COUNT must be 3 to match mainMenu arrays");
 
-/**
- * @brief Apply persistent data from flash.
- */
 void UI_applySettings(const SettingsPayload& data);
 
 #endif // UISTATE_H

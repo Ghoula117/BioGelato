@@ -5,13 +5,12 @@
  * This module reads a rotary encoder and its push-button,
  * performs software debouncing, long-press detection and sends
  * UI events to the UI queue.
- *
-
  */
 #include "Tasks/TaskEncoder.h"
+#include "Config/pins.h"
 
 /**
- * @brief Last sampled 2-bit encoder state: (pinCLK << 1) | pinDT.
+ * @brief Last sampled 2-bit encoder state: (PIN_CLK << 1) | PIN_DT.
  *
  * Both pins must be tracked
  * simultaneously to correctly decode EC11 quadrature output.
@@ -22,7 +21,7 @@ static uint8_t lastEncoderState = 0xFF;
 /**
  * @brief Timestamp of last valid encoder movement (ms).
  */
-static unsigned long lastEncoderMoveMs = 0;
+static uint32_t lastEncoderMoveMs = 0;
 
 /**
  * @brief Last sampled button state.
@@ -32,7 +31,7 @@ static bool lastButtonState = HIGH;
 /**
  * @brief Timestamp when button was pressed (ms).
  */
-static unsigned long buttonPressTime = 0;
+static uint32_t buttonPressTime = 0;
 
 /**
  * @brief Flag indicating that long press event has been fired.
@@ -41,10 +40,6 @@ static bool longPressFired = false;
 
 /**
  * @brief Encoder debounce time in milliseconds.
- *
- * The EC11 datasheet specifies chattering ≤ 3 ms and bounce ≤ 2 ms.
- * Since the PCB already includes hardware RC filters, 5 ms is
- * sufficient here. The original 50 ms would cause missed steps.
  */
 static constexpr uint32_t DEBOUNCE_MS   = 5;
 
@@ -75,8 +70,8 @@ static constexpr uint32_t LONG_PRESS_MS = 1000;
 static void readEncoder()
 {
     /* Build current 2-bit state from both encoder pins. */
-    uint8_t A     = (uint8_t)digitalRead(pinCLK);   /* 0 = closed, 1 = open */
-    uint8_t B     = (uint8_t)digitalRead(pinDT);    /* 0 = closed, 1 = open */
+    uint8_t A     = (uint8_t)digitalRead(PIN_CLK);   /* 0 = closed, 1 = open */
+    uint8_t B     = (uint8_t)digitalRead(PIN_DT);    /* 0 = closed, 1 = open */
     uint8_t state = (A << 1) | B;
 
     /* Nothing changed – nothing to do. */
@@ -106,7 +101,7 @@ static void readEncoder()
                        (state == 0b01 && lastEncoderState == 0b11));
 
             EncoderEvent evt = cw ? ENC_RIGHT : ENC_LEFT;
-            xQueueSend(xUIQueue, &evt, 0);
+            configASSERT(xQueueSend(xUIQueue, &evt, 0) == pdPASS);
             lastEncoderMoveMs = now;
         }
     }
@@ -116,13 +111,10 @@ static void readEncoder()
 
 /**
  * @brief Reads button state and generates short/long press events.
- *
- * Unchanged: the push-on switch of the EC11 behaves identically
- * to the original encoder module.
  */
 static void readButton()
 {
-    bool currentState = digitalRead(pinSW);
+    bool currentState = digitalRead(PIN_SW);
     uint32_t now      = millis();
 
     /* Falling edge: button pressed */
@@ -138,7 +130,7 @@ static void readButton()
         if (now - buttonPressTime >= LONG_PRESS_MS)
         {
             EncoderEvent evt = BTN_LONG;
-            xQueueSend(xUIQueue, &evt, 0);
+            configASSERT(xQueueSend(xUIQueue, &evt, 0) == pdPASS);
             longPressFired = true;
         }
     }
@@ -149,7 +141,7 @@ static void readButton()
         if (!longPressFired)
         {
             EncoderEvent evt = BTN_SHORT;
-            xQueueSend(xUIQueue, &evt, 0);
+            configASSERT(xQueueSend(xUIQueue, &evt, 0) == pdPASS);
         }
     }
 
@@ -167,10 +159,11 @@ static void readButton()
 void TaskEncoder(void *pvParameters)
 {
     /* Capture initial state so the first real transition is detected. */
-    uint8_t A         = (uint8_t)digitalRead(pinCLK);
-    uint8_t B         = (uint8_t)digitalRead(pinDT);
+    uint8_t A         = (uint8_t)digitalRead(PIN_CLK);
+    uint8_t B         = (uint8_t)digitalRead(PIN_DT);
     lastEncoderState  = (A << 1) | B;
-    lastButtonState   = digitalRead(pinSW);
+    lastButtonState   = digitalRead(PIN_SW);
+    buttonPressTime   = millis();
     lastEncoderMoveMs = 0;
     longPressFired    = false;
 
@@ -191,17 +184,18 @@ void TaskEncoder(void *pvParameters)
  */
 void TaskEncoder_init()
 {
-    pinMode(pinCLK, INPUT);   /* External pull-up on PCB */
-    pinMode(pinDT,  INPUT);   /* External pull-up on PCB */
-    pinMode(pinSW,  INPUT_PULLUP);
+    pinMode(PIN_CLK, INPUT);   /* External pull-up on PCB */
+    pinMode(PIN_DT,  INPUT);   /* External pull-up on PCB */
+    pinMode(PIN_SW,  INPUT_PULLUP);
 
-    xTaskCreatePinnedToCore(
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(
         TaskEncoder,
         "TaskEncoder",
         4096,
-        NULL,
+        nullptr,
         1,
-        NULL,
+        nullptr,
         APP_CPU_NUM
     );
+    configASSERT(taskCreated == pdPASS);
 }

@@ -64,7 +64,7 @@ void TaskBuzzer_init()
     ESP_ERROR_CHECK(ledc_timer_config(&timer_config));
 
     ledc_channel_config_t channel_config = {
-        .gpio_num   = BUZZER_PIN,
+        .gpio_num   = PIN_BUZZER,
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel    = BUZZER_PWM_CHANNEL,
         .intr_type  = LEDC_INTR_DISABLE,

@@ -111,13 +111,6 @@ static DripState dripState = {
 /**
  * @brief Maps a speed percentage to an LEDC duty value using a quadratic curve.
  *
- * The mapping is non-linear to compensate for the motor's dead zone below
- * approximately 17–18 % hardware duty. At percent = 0 the result is always 0.
- * For any non-zero input the output is at least `minDuty × MAX_DUTY`, ensuring
- * the motor receives enough drive to keep spinning once started.
- *
- * Formula: `y = minDuty + (1 - minDuty) × x²`, where `x = percent / 100`.
- *
  * @param percent Speed in the range 0–100 %.
  * @return LEDC duty value in the range 0–MAX_DUTY.
  */
@@ -150,8 +143,6 @@ static void Drip_applyPulse(uint8_t percent)
 /**
  * @brief Timer callback that ends the kickstart phase.
  *
- * Fires KICKSTART_MS after Motor_setSpeed() applies the 70 % kickstart duty.
- * Drops the LEDC output to the actual target duty stored in kickstartTargetDuty.
  */
 static void kickstartCallback(TimerHandle_t)
 {
@@ -497,7 +488,7 @@ void TaskMotor_init()
     ESP_ERROR_CHECK(ledc_timer_config(&timer_config));
 
     ledc_channel_config_t channel_config = {
-        .gpio_num   = MOTOR_PWM_PIN,
+        .gpio_num   = PIN_MOTOR,
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel    = MOTOR_PWM_CHANNEL,
         .intr_type  = LEDC_INTR_DISABLE,

@@ -1,10 +1,36 @@
+/**
+ * @file UI.cpp
+ * @brief TFT display rendering implementation.
+ */
 #include "UI/UI.h"
+#include "Config/pins.h"
+#include "images/icons.h"
+#include <TFT_eSPI.h>
 
-TFT_eSPI tft = TFT_eSPI();
-TFT_eSprite iconSprite = TFT_eSprite(&tft);
-TFT_eSprite bigIconSprite = TFT_eSprite(&tft);
-TFT_eSprite logoIconSprite = TFT_eSprite(&tft);
+#define VERSION_STRING "v2.4.0"
 
+static constexpr int SCREEN_WIDTH  = 160;
+static constexpr int SCREEN_HEIGHT = 128;
+
+static constexpr int ICON_X      = 4;
+static constexpr int TEXT_X      = 44;
+static constexpr int TEXT_HEIGHT = 16;
+
+static constexpr int BTN_Y = 80;
+static constexpr int BTN_W = 60;
+static constexpr int BTN_H = 40;
+
+static TFT_eSPI tft = TFT_eSPI();
+static TFT_eSprite iconSprite = TFT_eSprite(&tft);
+static TFT_eSprite bigIconSprite = TFT_eSprite(&tft);
+static TFT_eSprite logoIconSprite = TFT_eSprite(&tft);
+
+/**
+ * @brief Initializes TFT display, sprite buffers, and backlight GPIO.
+ *
+ * PIN_TFT_LED is held LOW on init; the caller enables it after the boot logo
+ * renders to avoid displaying noise during TFT driver startup.
+ */
 void UI_init()
 {
     tft.init();
@@ -22,8 +48,8 @@ void UI_init()
     logoIconSprite.setSwapBytes(true);
     logoIconSprite.createSprite(ICON_WIDTH*4, ICON_HEIGHT*4);
 
-    pinMode(pinLEDTFT, OUTPUT);
-    digitalWrite(pinLEDTFT, LOW);
+    pinMode(PIN_TFT_LED, OUTPUT);
+    digitalWrite(PIN_TFT_LED, LOW);
 }
 
 void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon)
@@ -71,7 +97,7 @@ void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* ic
 
 static void UI_drawHeader(const char* title, const uint16_t* icon)
 {
-    const int sectionHeight = SCREEN_HEIGHT / 3;
+    const int sectionHeight = SCREEN_HEIGHT / MENU_COUNT;
     tft.fillScreen(TFT_BLACK);
     UI_drawMenuItem(title, icon, 0, sectionHeight, true);
 }
@@ -108,7 +134,7 @@ void UI_drawBootLogo()
 {
     tft.fillScreen(TFT_WHITE);
 
-    const int iconSize = 128;
+    const int iconSize = ICON_WIDTH * 4;
     logoIconSprite.fillSprite(TFT_BLACK);
     logoIconSprite.pushImage(0, 0, iconSize, iconSize, logoIcon);
     logoIconSprite.pushSprite(SCREEN_WIDTH/2 - iconSize/2, SCREEN_HEIGHT/2 - iconSize/2, TFT_BLACK);
@@ -157,7 +183,7 @@ void UI_updateSpeed(int speed)
     tft.setFreeFont(nullptr);
 }
 
-static const char* timeLabels[] ={
+static const char* const timeLabels[] = {
     "15 MIN", "30 MIN", "45 MIN", "60 MIN", "CONT"
 };
 
@@ -181,7 +207,7 @@ void UI_updateTimeSelect(int index)
     tft.setFreeFont(nullptr);
 }
 
-static const char* CleanLabels[] ={
+static const char* const cleanLabels[] = {
     "RAPIDO", "LENTO", "PURGA", "MANUAL"
 };
 
@@ -200,7 +226,7 @@ void UI_updateSystemSelect(int index)
 
     int centerX = SCREEN_WIDTH  / 2;
     int centerY = SCREEN_HEIGHT / 2 + 20;
-    tft.drawString(CleanLabels[index], centerX, centerY);
+    tft.drawString(cleanLabels[index], centerX, centerY);
 
     tft.setFreeFont(nullptr);
 }
@@ -210,7 +236,7 @@ void UI_drawReviewSoft()
     tft.fillScreen(TFT_BLACK);
     UI_drawHeader(VERSION_STRING, nullptr);
 
-    const int iconSize = 64;
+    const int iconSize = ICON_WIDTH * 2;
 
     bigIconSprite.fillSprite(TFT_BLACK);
     bigIconSprite.pushImage(0, 0, iconSize, iconSize, QRIcon);

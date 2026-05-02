@@ -1,72 +1,31 @@
+/**
+ * @file UI.h
+ * @brief TFT display rendering interface.
+ */
 #ifndef UI_H
 #define UI_H
 
 #include "Config/config.h"
-#include "images/icons.h"
-#include <TFT_eSPI.h>
 #include <stdint.h>
 
-extern TFT_eSPI tft;
+constexpr int MENU_COUNT = 3;
 
-#define VERSION_STRING "v1.0.0"
-
-constexpr int SCREEN_WIDTH  = 160;
-constexpr int SCREEN_HEIGHT = 128;
-
-constexpr int ICON_X        = 4;
-constexpr int TEXT_X        = 44;
-constexpr int TEXT_HEIGHT   = 16;
-
-constexpr int MENU_COUNT    =  3;
-
-constexpr int BTN_Y         = 80;
-constexpr int BTN_W         = 60;
-constexpr int BTN_H         = 40;
-
-constexpr uint8_t pinLEDTFT = 15;
-
-// ===========================
-// UI
-// ===========================
 void UI_init();
 
-// ===========================
-// MENU SYSTEM
-// ===========================
 void UI_drawMenu(const char* const titles[], const uint16_t* const icons[], int items);
 void UI_updateMenuSelection(const char* const* titles, const uint16_t* const* icons, int last, int current, int items);
 void UI_drawIcon(int16_t x, int16_t y, const uint16_t* icon);
 
-// ===========================
-// CONFIRM DIALOG
-// ===========================
-
-void UI_drawConfirmStatic(const char* title, const uint16_t* icons);
+void UI_drawConfirmStatic(const char* title, const uint16_t* icon);
 void UI_drawConfirmButtons(int selected);
 
-// ===========================
-// BOOT / STATIC SCREENS
-// ===========================
-
 void UI_drawBootLogo();
-
-// ===========================
-// SPEED SCREEN
-// ===========================
 
 void UI_drawSpeedStatic();
 void UI_updateSpeed(int speed);
 
-// ===========================
-// TIME SELECT SCREEN
-// ===========================
-
 void UI_drawTimeSelectStatic();
 void UI_updateTimeSelect(int index);
-
-// ===========================
-// REVIEW SCREENS
-// ===========================
 
 void UI_drawReviewSystem();
 void UI_updateSystemSelect(int index);

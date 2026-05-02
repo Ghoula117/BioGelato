@@ -53,9 +53,12 @@ void sendPowerRequest(PowerCmdType type)
 
 void sendSettingsSave(SettingsCmdType type, int motorSpeed, uint8_t timeIndex)
 {
+    if (motorSpeed < 0)   motorSpeed = 0;
+    if (motorSpeed > 100) motorSpeed = 100;
+
     SettingsCommand cmd = {};
     cmd.type = type;
-    cmd.data.motorSpeed = motorSpeed;
+    cmd.data.motorSpeed = (uint8_t)motorSpeed;
     cmd.data.timeIndex  = timeIndex;
     configASSERT(xQueueSend(xSettingsQueue, &cmd, 0) == pdPASS);
 }

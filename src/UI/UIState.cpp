@@ -7,14 +7,39 @@
 // =====================
 // MENU DEFINITIONS
 // =====================
-const char* const mainMenuTitles[]    = {"INICIO", "SISTEMA", "APAGAR"};
-const uint16_t* const mainMenuIcons[] = { homeIcon, systemIcon, powerOffIcon };
+static const char* const mainMenuTitles[]    = {"INICIO", "SISTEMA", "APAGAR"};
+static const uint16_t* const mainMenuIcons[] = { homeIcon, systemIcon, powerOffIcon };
 
-const char* const systemMenuTitles[]    = {"LIMPIEZA", "INFO", "GUARDAR"};
-const uint16_t* const systemMenuIcons[] = { homeIcon, aboutIcon, saveIcon };
+static const char* const systemMenuTitles[]    = {"LIMPIEZA", "INFO", "GUARDAR"};
+static const uint16_t* const systemMenuIcons[] = { homeIcon, aboutIcon, saveIcon };
 
-const char* const mainStartTitles[]    = {"TIMER", "VELOCIDAD"};
-const uint16_t* const mainStartIcons[] = { timerIcon, percentageIcon};
+static const char* const mainStartTitles[]    = {"TIMER", "VELOCIDAD"};
+static const uint16_t* const mainStartIcons[] = { timerIcon, percentageIcon};
+
+static const uint32_t timeOptions[] = {
+    15 * 60 * 1000,
+    30 * 60 * 1000,
+    45 * 60 * 1000,
+    60 * 60 * 1000,
+    0
+};
+
+static const MotorCmdType cleanCmdMap[] =
+{
+    MOTOR_CMD_CLEAN_FAST,
+    MOTOR_CMD_CLEAN_SLOW,
+    MOTOR_CMD_CLEAN_PURGE,
+    MOTOR_CMD_CLEAN_MANUAL
+};
+
+static constexpr uint32_t FAST_THRESHOLD_MS  = 80;
+static constexpr uint32_t RESET_THRESHOLD_MS = 300;
+static constexpr uint8_t  MAX_STEP           = 10;
+static constexpr uint8_t  STEP_INCREMENT     = 2;
+
+#define CLEAN_OPTION_COUNT (sizeof(cleanCmdMap)/sizeof(cleanCmdMap[0]))
+static_assert(sizeof(timeOptions)/sizeof(timeOptions[0]) == TIME_OPTION_COUNT,
+              "TIME_OPTION_COUNT in UIState.h must match timeOptions array size");
 
 // =====================
 // INTERNAL VARIABLES
@@ -101,7 +126,7 @@ static void handleConfirmDialog(EncoderEvent evt, void (*onAccept)(void), UIStat
     }
 }
 
-static inline uint8_t dicamicEncoder(uint32_t deltaTime, uint8_t& currentStep)
+static inline uint8_t dinamicEncoder(uint32_t deltaTime, uint8_t& currentStep)
 {
     
     if (deltaTime < FAST_THRESHOLD_MS) {
@@ -122,18 +147,21 @@ static inline uint8_t clampIndex(int v,uint8_t max)
     return (uint8_t)v;
 }
 
+/**
+ * @brief Restores motor speed and time index from persisted NVS settings.
+ */
 void UI_applySettings(const SettingsPayload& data)
 {
     motorSpeed = data.motorSpeed;
     timeIndex  = data.timeIndex;
 }
 
-void OnsendSettingsSave()
+static void OnsendSettingsSave()
 {
     sendSettingsSave(SETTINGS_CMD_SAVE, motorSpeed, timeIndex);
 }
 
-void OnsendPowerRequeste()
+static void OnsendPowerRequest()
 {
     sendPowerRequest(POWER_CMD_SHUTDOWN);
 }
@@ -263,50 +291,22 @@ static void handleSpeedControl(EncoderEvent evt)
     switch(evt)
     {
         case ENC_LEFT:
-        {
-            uint32_t now = millis();
-            uint32_t deltaTime = now - lastChangeTime;
-            
-            uint8_t step = dicamicEncoder(deltaTime, speedStep);
-            
-            int newSpeed = motorSpeed - step;
-            bool hitLimit = (newSpeed < 0);
-            
-            motorSpeed = constrain(newSpeed, 0, 100);
-            
-            lastChangeTime = now;
-            
-            if (hitLimit && !wasAtLimit) {
-                speedStep = 1;
-                sendBuzzerCommand(BUZZER_CMD_ERROR);
-                wasAtLimit = true;
-            }
-            else if (!hitLimit) {
-                wasAtLimit = false;
-            }
-            break;
-        }
-            
         case ENC_RIGHT:
         {
             uint32_t now = millis();
-            uint32_t deltaTime = now - lastChangeTime;
-            
-            uint8_t step = dicamicEncoder(deltaTime, speedStep);
-            
-            int newSpeed = motorSpeed + step;
-            bool hitLimit = (newSpeed > 100);
-            
-            motorSpeed = constrain(newSpeed, 0, 100);
-            
+            uint8_t step = dinamicEncoder(now - lastChangeTime, speedStep);
             lastChangeTime = now;
-            
+
+            int newSpeed = (evt == ENC_LEFT) ? motorSpeed - step : motorSpeed + step;
+            bool hitLimit = (newSpeed < 0) || (newSpeed > 100);
+
+            motorSpeed = constrain(newSpeed, 0, 100);
+
             if (hitLimit && !wasAtLimit) {
                 speedStep = 1;
                 sendBuzzerCommand(BUZZER_CMD_ERROR);
                 wasAtLimit = true;
-            }
-            else if (!hitLimit) {
+            } else if (!hitLimit) {
                 wasAtLimit = false;
             }
             break;
@@ -332,8 +332,8 @@ static void handleSystemMenu(EncoderEvent evt)
 {
     static const UIState transitions[] = {
         MENU_REVIEW_SYSTEM,
-        MENU_REVIEW_SAVE_CONFIRM,
-        MENU_REVIEW_SOFTWARE
+        MENU_REVIEW_SOFTWARE,
+        MENU_REVIEW_SAVE_CONFIRM
     };
 
     handleGenericMenu(evt,
@@ -378,7 +378,7 @@ static void handleSoftInfo(EncoderEvent evt)
 
 static void handleSettingsPowerOff(EncoderEvent evt)
 {
-    handleConfirmDialog(evt, OnsendPowerRequeste, MENU_INIT, MENU_MAIN);
+    handleConfirmDialog(evt, OnsendPowerRequest, MENU_INIT, MENU_MAIN);
 }
 
 // =====================
@@ -407,19 +407,24 @@ static const UIStateTable stateTable[] = {
     // MENU_REVIEW_SYSTEM
     { enterSystem,       handleSystem,       nullptr },
 
-    // MENU_REVIEW_SOFTWARE
-    { UI_drawReviewSoft, handleSoftInfo,    nullptr },
-
     // MENU_REVIEW_SAVE_CONFIRM
-    { enterSaveConfirm,  handleSaveConfirm, nullptr },
+    { enterSaveConfirm,  handleSaveConfirm,  nullptr },
 
-    // MENU_SETTINGS_POWER_OFF
+    // MENU_REVIEW_SOFTWARE
+    { UI_drawReviewSoft, handleSoftInfo,     nullptr },
+
+    // MENU_POWER_OFF
     { enterPowerOff,  handleSettingsPowerOff, nullptr }
 };
 
 // =====================
 // FSM API
 // =====================
+/**
+ * @brief Transitions to a new UI state, invoking onExit/onEnter callbacks.
+ *
+ * @param newState Target state; no-op if equal to the current state.
+ */
 void UI_setState(UIState newState)
 {
     if (newState >= UI_STATE_COUNT) return;
@@ -437,6 +442,11 @@ void UI_setState(UIState newState)
         stateTable[currentState].onEnter();
 }
 
+/**
+ * @brief Dispatches an encoder event to the current state's handler.
+ *
+ * @param evt Encoder event to process.
+ */
 void UI_processEvent(EncoderEvent evt)
 {
     if (stateTable[currentState].handleEvent)

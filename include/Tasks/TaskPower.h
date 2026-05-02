@@ -6,8 +6,7 @@
 #define TASKPOWER_H
 
 #include "Config/config.h"
-#include "UI/UI.h"
-#include "Tasks/TaskEncoder.h"
+#include "Config/pins.h"
 #include <Arduino.h>
 #include "esp_sleep.h"
 

@@ -9,6 +9,7 @@
 #define TASKMOTOR_H
 
 #include "Config/config.h"
+#include "Config/pins.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -19,9 +20,6 @@
 /* =========================
    HARDWARE CONFIGURATION
    ========================= */
-
-/** @brief GPIO connected to the motor PWM input. */
-constexpr int MOTOR_PWM_PIN = 21;
 
 /** @brief LEDC channel used for motor PWM output. */
 #define MOTOR_PWM_CHANNEL  LEDC_CHANNEL_0

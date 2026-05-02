@@ -9,6 +9,7 @@
 #define TASKBUZZER_H
 
 #include "Config/config.h"
+#include "Config/pins.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -18,9 +19,6 @@
 /* =========================
    HARDWARE CONFIGURATION
    ========================= */
-
-/** @brief GPIO connected to the buzzer. */
-constexpr int BUZZER_PIN = 47;
 
 /** @brief LEDC channel used for tone generation. */
 #define BUZZER_PWM_CHANNEL  LEDC_CHANNEL_1

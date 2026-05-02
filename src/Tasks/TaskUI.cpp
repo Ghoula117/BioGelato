@@ -32,7 +32,7 @@ void TaskUI_init()
 {
     UI_init();
     UI_setState(MENU_INIT); /* Force initial state BEFORE task starts processing events */
-    xTaskCreatePinnedToCore(
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(
         TaskUI,
         "TaskUI",
         4096,
@@ -41,4 +41,5 @@ void TaskUI_init()
         nullptr,
         APP_CPU_NUM
     );
+    configASSERT(taskCreated == pdPASS);
 }

@@ -38,11 +38,11 @@ void TaskPower_init()
 
 void Power_requestShutdown()
 {
-    digitalWrite(pinLEDTFT, LOW);
+    digitalWrite(PIN_TFT_LED, LOW);
     sendMotorRequest(MOTOR_CMD_SET_SPEED, 0, 0);
     vTaskDelay(pdMS_TO_TICKS(500));  // allow motor to decelerate before sleep
 
     // EXT0 wakes on encoder button (active low)
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)pinSW, 0);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_SW, 0);
     esp_deep_sleep_start();
 }

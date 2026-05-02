@@ -185,7 +185,8 @@ void Config_init();
  * @brief Posts a motor command to `xMotorQueue`.
  *
  * @param type     Command type.
- * @param speed    Speed percentage (0–100); ignored for non-speed commands.
+ * @param speed    Speed percentage (0–100); used by MOTOR_CMD_SET_SPEED and
+ *                 MOTOR_CMD_START_TIMED; ignored for all other command types.
  * @param duration Run duration in ms; 0 means no timeout.
  */
 void sendMotorRequest(MotorCmdType type, int speed, uint32_t duration);
